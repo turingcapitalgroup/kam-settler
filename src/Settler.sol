@@ -226,7 +226,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         // Calculate and process fees
         (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance) =
-            _fees(_vault, _vaultAdapter, _metavault, _depeg);
+            _fees(_vault, _vaultAdapter, _metavault);
 
         // Calculate final asset data for settlement
         AssetData memory _assetData =
@@ -595,6 +595,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     {
         if (_difference != 0) {
             uint256 _shareValue = _dnMetaVault.convertToShares(_difference.abs());
+            // Adjust any dust
+            while (_dnMetaVault.convertToAssets(_shareValue) < _difference.abs()) _shareValue += 1;
             _executeRebalanceTransfer(_difference > 0, _dnMetaVault, _kMinterAdapter, _dnVaultAdapter, _shareValue);
         }
     }
@@ -642,8 +644,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     function _fees(
         IkStakingVault _vault,
         IMinimalSmartAccount _dnVaultAdapter,
-        IERC7540 _dnMetaVault,
-        int256 _difference
+        IERC7540 _dnMetaVault
     )
         internal
         returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
@@ -651,7 +652,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         // Calculate fees and get timestamps
         uint256 _feeShares;
         (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-            _calculateFees(_vault, _difference);
+            _calculateFees(_vault);
 
         // If there are fees to charge, execute the transfer
         if (_feeShares > 0) {
@@ -666,8 +667,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
     function _calculateFees(
-        IkStakingVault _vault,
-        int256 _difference
+        IkStakingVault _vault
     )
         internal
         view
@@ -678,11 +678,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         uint256 _performanceFeeTimestamp = _vault.nextPerformanceFeeTimestamp();
 
         // Get calculated fees from vault reader
-        int256 _totalAssets = int256(_vault.totalAssets()) + _difference;
-        require(_totalAssets >= 0, "Total assets cannot be negative");
+        uint256 _totalAssets = _vault.totalAssets();
 
         (uint256 _managementFee, uint256 _performanceFee,) =
-            _vault.computeLastBatchFeesWithAssetsAndSupply(uint256(_totalAssets), _vault.totalSupply());
+            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply());
 
         // Check if management fee is due
         if (zeroFloorSub(block.timestamp, _managementFeeTimestamp) > 0) {
