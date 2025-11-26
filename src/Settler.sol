@@ -744,6 +744,6 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         address[] memory _targets = registry.getAdapterTargets(_adapter);
         // If there's only one target, it's the metavault
         // If there are two targets, the metavault is at index 1 (index 0 is the asset)
-        _target = _targets.length == 1 ? _targets[0] : _targets[1];
+        _target = _targets.length == 1 ? _targets[0] : _targets[0];
     }
 }

@@ -17,7 +17,7 @@ contract SettlerTest is BaseVaultTest {
         settler = new Settler(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
-        vm.prank(users.admin);
+        vm.startPrank(users.admin);
         registry.grantRelayerRole(address(settler));
         vault = IkStakingVault(address(dnVault));
 
@@ -30,8 +30,64 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.owner);
         DNVaultAdapterUSDC.grantRoles(address(settler), 2);
 
+         vm.prank(users.owner);
+        minterAdapterUSDC.grantRoles(address(users.relayer), 2);
+
+        vm.prank(users.owner);
+        DNVaultAdapterUSDC.grantRoles(address(users.relayer), 2);
+
         _setupTestFees();
 
+        vm.stopPrank();
+        vm.startPrank(users.relayer);
+
+        // First execution: approve USDC to erc7540USDC
+        Execution[] memory executions1 = new Execution[](1);
+        executions1[0] = Execution({
+            target: tokens.usdc,
+            value: 0,
+            callData: abi.encodeWithSignature("approve(address,uint256)", address(erc7540USDC), type(uint256).max)
+        });
+        bytes memory executionCalldata1 = ExecutionLib.encodeBatch(executions1);
+        ModeCode mode1 = ModeLib.encodeSimpleBatch();
+        minterAdapterUSDC.execute(mode1, executionCalldata1);
+
+        // // Second execution: approve erc7540USDC to DNVaultAdapter
+        // Execution[] memory executions2 = new Execution[](1);
+        // executions2[0] = Execution({
+        //     target: address(erc7540USDC),
+        //     value: 0,
+        //     callData: abi.encodeWithSignature(
+        //         "approve(address,uint256)", address(DNVaultAdapterUSDC), type(uint256).max
+        //     )
+        // });
+        // bytes memory executionCalldata2 = ExecutionLib.encodeBatch(executions2);
+        // ModeCode mode2 = ModeLib.encodeSimpleBatch();
+        // minterAdapterUSDC.execute(mode2, executionCalldata2);
+
+        // // Third execution: requestDeposit and deposit
+        // uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
+        // Execution[] memory executions3 = new Execution[](2);
+        // executions3[0] = Execution({
+        //     target: address(erc7540USDC),
+        //     value: 0,
+        //     callData: abi.encodeWithSignature(
+        //         "requestDeposit(uint256,address,address)",
+        //         balance,
+        //         address(minterAdapterUSDC),
+        //         address(minterAdapterUSDC)
+        //     )
+        // });
+        // executions3[1] = Execution({
+        //     target: address(erc7540USDC),
+        //     value: 0,
+        //     callData: abi.encodeWithSignature(
+        //         "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
+        //     )
+        // });
+        // bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);
+        // ModeCode mode3 = ModeLib.encodeSimpleBatch();
+        // minterAdapterUSDC.execute(mode3, executionCalldata3);
         vm.stopPrank();
     }
 
