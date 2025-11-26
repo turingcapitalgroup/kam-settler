@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { IVaultBatch } from "./IVaultBatch.sol";
-import { IVaultClaim } from "./IVaultClaim.sol";
-import { IVaultFees } from "./IVaultFees.sol";
+import {IVaultBatch} from "./IVaultBatch.sol";
+import {IVaultClaim} from "./IVaultClaim.sol";
+import {IVaultFees} from "./IVaultFees.sol";
 
 /// @title IVault
 /// @notice Core interface for retail staking operations enabling kToken holders to earn yield through vault strategies

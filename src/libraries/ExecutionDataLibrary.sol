@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { IERC20 } from "../interfaces/IERC20.sol";
-import { IERC7540 } from "../interfaces/IERC7540.sol";
-import { Execution } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
+import {IERC7540} from "../interfaces/IERC7540.sol";
+import {Execution} from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /**
  * @title ExecutionDataLibrary
@@ -21,20 +21,14 @@ library ExecutionDataLibrary {
      * @param amount The amount of tokens to transfer
      * @return executions Array containing a single Execution struct
      */
-    function getTransferExecutionData(
-        address target,
-        address to,
-        uint256 amount
-    )
+    function getTransferExecutionData(address target, address to, uint256 amount)
         internal
         pure
         returns (Execution[] memory executions)
     {
         executions = new Execution[](1);
         executions[0] = Execution({
-            target: target,
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, to, amount)
+            target: target, value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, to, amount)
         });
     }
 
@@ -47,21 +41,14 @@ library ExecutionDataLibrary {
      * @param amount The amount of tokens to transfer
      * @return executions Array containing a single Execution struct
      */
-    function getTransferFromExecutionData(
-        address target,
-        address from,
-        address to,
-        uint256 amount
-    )
+    function getTransferFromExecutionData(address target, address from, address to, uint256 amount)
         internal
         pure
         returns (Execution[] memory executions)
     {
         executions = new Execution[](1);
         executions[0] = Execution({
-            target: target,
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
+            target: target, value: 0, callData: abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
         });
     }
 
@@ -74,12 +61,7 @@ library ExecutionDataLibrary {
      * @param shares The amount of shares to request for redemption
      * @return executions Array containing a single Execution struct
      */
-    function getRequestRedeemExecutionData(
-        address target,
-        address controller,
-        address owner,
-        uint256 shares
-    )
+    function getRequestRedeemExecutionData(address target, address controller, address owner, uint256 shares)
         internal
         pure
         returns (Execution[] memory executions)
@@ -101,12 +83,7 @@ library ExecutionDataLibrary {
      * @param shares The amount of shares to redeem
      * @return executions Array containing a single Execution struct
      */
-    function getRedeemExecutionData(
-        address target,
-        address receiver,
-        address controller,
-        uint256 shares
-    )
+    function getRedeemExecutionData(address target, address receiver, address controller, uint256 shares)
         internal
         pure
         returns (Execution[] memory executions)
@@ -128,18 +105,13 @@ library ExecutionDataLibrary {
      * @param assets The amount of assets to deposit
      * @return executions Array containing two Execution structs for requestDeposit and deposit
      */
-    function getDepositExecutionData(
-        address target,
-        address receiver,
-        address controller,
-        uint256 assets
-    )
+    function getDepositExecutionData(address target, address receiver, address controller, uint256 assets)
         internal
         pure
         returns (Execution[] memory executions)
     {
         executions = new Execution[](2);
-        
+
         // First execution: requestDeposit
         executions[0] = Execution({
             target: target,

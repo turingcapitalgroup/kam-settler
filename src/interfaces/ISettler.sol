@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { IVaultAdapter } from "./IVaultAdapter.sol";
-import { IkAssetRouter } from "./IkAssetRouter.sol";
-import { IkMinter } from "./IkMinter.sol";
-import { IkStakingVault } from "./IkStakingVault.sol";
-import { IkToken } from "./IkToken.sol";
+import {IVaultAdapter} from "./IVaultAdapter.sol";
+import {IkAssetRouter} from "./IkAssetRouter.sol";
+import {IkMinter} from "./IkMinter.sol";
+import {IkStakingVault} from "./IkStakingVault.sol";
+import {IkToken} from "./IkToken.sol";
 
 interface ISettler {
     /*//////////////////////////////////////////////////////////////
@@ -117,13 +117,7 @@ interface ISettler {
     /// @param _asset The asset address to propose the settlement for
     /// @param _batchId The batch ID to propose the settlement for
     /// @return _proposalId The proposal ID for the settlement
-    function proposeMinterSettleBatch(
-        address _asset,
-        bytes32 _batchId
-    )
-        external
-        payable
-        returns (bytes32 _proposalId);
+    function proposeMinterSettleBatch(address _asset, bytes32 _batchId) external payable returns (bytes32 _proposalId);
 
     /// @notice Requests redemption from the meta-vault for a settlement proposal
     /// @dev Only processes proposals with positive netted amounts (negative netted amounts
@@ -157,9 +151,7 @@ interface ISettler {
         uint256 _totalAssets,
         uint64 _lastFeesChargedManagement,
         uint64 _lastFeesChargedPerformance
-    )
-        external
-        payable;
+    ) external payable;
 
     /// @notice Closes the vault batches
     /// @param _vault the vault to close the batch
