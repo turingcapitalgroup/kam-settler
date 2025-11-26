@@ -1,0 +1,4 @@
+forge-std/=dependencies/forge-std-1.10.0/src/
+kam/=dependencies/kam-v1/
+minimal-smart-account/=dependencies/minimal-smart-account-1.0/src/
+src/=src/contracts/
