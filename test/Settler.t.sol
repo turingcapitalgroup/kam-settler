@@ -26,36 +26,42 @@ contract SettlerTest is BaseVaultTest {
         vm.stopPrank();
         BaseVaultTest.setUp();
 
+        vm.prank(users.owner);
+        minterAdapterUSDC.grantRoles(users.relayer, 2);
+
+        vm.prank(users.owner);
+        DNVaultAdapterUSDC.grantRoles(users.relayer, 2);
+
         _setupTestFees();
 
         vm.startPrank(users.admin);
         registry.grantManagerRole(address(settler));
 
-        IkRegistry(address(registry))
-            .setAdapterAllowedSelector(
-                address(minterAdapterUSDC),
-                address(metaVault),
-                2,
-                bytes4(keccak256("requestDeposit(uint256,address,address)")),
-                true
-            );
-        IkRegistry(address(registry))
-            .setAdapterAllowedSelector(
-                address(minterAdapterUSDC),
-                address(metaVault),
-                2,
-                bytes4(keccak256("deposit(uint256,address,address)")),
-                true
-            );
+        // IkRegistry(address(registry))
+        //     .setAdapterAllowedSelector(
+        //         address(minterAdapterUSDC),
+        //         address(metaVault),
+        //         2,
+        //         bytes4(keccak256("requestDeposit(uint256,address,address)")),
+        //         true
+        //     );
+        // IkRegistry(address(registry))
+        //     .setAdapterAllowedSelector(
+        //         address(minterAdapterUSDC),
+        //         address(metaVault),
+        //         2,
+        //         bytes4(keccak256("deposit(uint256,address,address)")),
+        //         true
+        //     );
 
-        IkRegistry(address(registry))
-            .setAdapterAllowedSelector(
-                address(minterAdapterUSDC),
-                address(metaVault),
-                2,
-                bytes4(keccak256("requestRedeem(uint256,address,address)")),
-                true
-            );
+        // IkRegistry(address(registry))
+        //     .setAdapterAllowedSelector(
+        //         address(minterAdapterUSDC),
+        //         address(metaVault),
+        //         2,
+        //         bytes4(keccak256("requestRedeem(uint256,address,address)")),
+        //         true
+        //     );
 
         IkRegistry(address(registry))
             .setAdapterAllowedSelector(
@@ -66,10 +72,10 @@ contract SettlerTest is BaseVaultTest {
                 true
             );
 
-        IkRegistry(address(registry))
-            .setAdapterAllowedSelector(
-                address(minterAdapterUSDC), address(tokens.usdc), 2, bytes4(keccak256("approve(address,uint256)")), true
-            );
+        // IkRegistry(address(registry))
+        //     .setAdapterAllowedSelector(
+        //         address(minterAdapterUSDC), address(tokens.usdc), 2, bytes4(keccak256("approve(address,uint256)")), true
+        //     );
 
         IkRegistry(address(registry))
             .setAdapterAllowedSelector(
