@@ -182,16 +182,11 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         _executeAdapterCall(_adapter, _executions);
 
-        uint256 _adapterBalance = _metavault.balanceOf(address(_adapter));
-        int256 _totalAssets = int256(_metavault.convertToAssets(_adapterBalance)) - _nettedAmount;
+        uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
-        require(_totalAssets >= 0, "underflow");
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
 
-        uint256 _totalAssetsUint = uint256(_totalAssets);
-
-        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _totalAssetsUint, 0, 0);
-
-        emit ProposeSettleBatch(_proposalId, _asset, address(kMinter), _batchId, _totalAssetsUint, 0, 0);
+        emit ProposeSettleBatch(_proposalId, _asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
