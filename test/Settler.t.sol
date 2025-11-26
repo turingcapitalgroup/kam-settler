@@ -30,7 +30,7 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.owner);
         DNVaultAdapterUSDC.grantRoles(address(settler), 2);
 
-         vm.prank(users.owner);
+        vm.prank(users.owner);
         minterAdapterUSDC.grantRoles(address(users.relayer), 2);
 
         vm.prank(users.owner);
@@ -39,6 +39,8 @@ contract SettlerTest is BaseVaultTest {
         _setupTestFees();
 
         vm.stopPrank();
+        vm.prank(users.admin);
+        paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
         vm.startPrank(users.relayer);
 
         // First execution: approve USDC to erc7540USDC
@@ -52,42 +54,42 @@ contract SettlerTest is BaseVaultTest {
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode1, executionCalldata1);
 
-        // // Second execution: approve erc7540USDC to DNVaultAdapter
-        // Execution[] memory executions2 = new Execution[](1);
-        // executions2[0] = Execution({
-        //     target: address(erc7540USDC),
-        //     value: 0,
-        //     callData: abi.encodeWithSignature(
-        //         "approve(address,uint256)", address(DNVaultAdapterUSDC), type(uint256).max
-        //     )
-        // });
-        // bytes memory executionCalldata2 = ExecutionLib.encodeBatch(executions2);
-        // ModeCode mode2 = ModeLib.encodeSimpleBatch();
-        // minterAdapterUSDC.execute(mode2, executionCalldata2);
+        // Second execution: approve erc7540USDC to DNVaultAdapter
+        Execution[] memory executions2 = new Execution[](1);
+        executions2[0] = Execution({
+            target: address(erc7540USDC),
+            value: 0,
+            callData: abi.encodeWithSignature(
+                "approve(address,uint256)", address(DNVaultAdapterUSDC), type(uint256).max
+            )
+        });
+        bytes memory executionCalldata2 = ExecutionLib.encodeBatch(executions2);
+        ModeCode mode2 = ModeLib.encodeSimpleBatch();
+        minterAdapterUSDC.execute(mode2, executionCalldata2);
 
-        // // Third execution: requestDeposit and deposit
-        // uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
-        // Execution[] memory executions3 = new Execution[](2);
-        // executions3[0] = Execution({
-        //     target: address(erc7540USDC),
-        //     value: 0,
-        //     callData: abi.encodeWithSignature(
-        //         "requestDeposit(uint256,address,address)",
-        //         balance,
-        //         address(minterAdapterUSDC),
-        //         address(minterAdapterUSDC)
-        //     )
-        // });
-        // executions3[1] = Execution({
-        //     target: address(erc7540USDC),
-        //     value: 0,
-        //     callData: abi.encodeWithSignature(
-        //         "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
-        //     )
-        // });
-        // bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);
-        // ModeCode mode3 = ModeLib.encodeSimpleBatch();
-        // minterAdapterUSDC.execute(mode3, executionCalldata3);
+        // Third execution: requestDeposit and deposit
+        uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
+        Execution[] memory executions3 = new Execution[](2);
+        executions3[0] = Execution({
+            target: address(erc7540USDC),
+            value: 0,
+            callData: abi.encodeWithSignature(
+                "requestDeposit(uint256,address,address)",
+                balance,
+                address(minterAdapterUSDC),
+                address(minterAdapterUSDC)
+            )
+        });
+        executions3[1] = Execution({
+            target: address(erc7540USDC),
+            value: 0,
+            callData: abi.encodeWithSignature(
+                "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
+            )
+        });
+        bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);
+        ModeCode mode3 = ModeLib.encodeSimpleBatch();
+        minterAdapterUSDC.execute(mode3, executionCalldata3);
         vm.stopPrank();
     }
 

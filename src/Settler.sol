@@ -126,6 +126,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         if (_nettedAmount < 0) {
             // Convert absolute value of netted assets to shares
             uint256 _shares = _metavault.convertToShares(_nettedAmount.abs());
+            // Adjust any dust
+            while (_metavault.convertToAssets(_shares) < _nettedAmount.abs()) _shares += 1;
 
             // Execute redemption request through the DN vault adapter
             Execution[] memory _executions = ExecutionDataLibrary.getRequestRedeemExecutionData(
@@ -172,6 +174,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IERC7540 _metavault = IERC7540(_target);
 
         uint256 _shares = _metavault.convertToShares(_nettedAmount.abs());
+        // Adjust any dust
+        while (_metavault.convertToAssets(_shares) < _nettedAmount.abs()) _shares += 1;
 
         Execution[] memory _executions =
             ExecutionDataLibrary.getRedeemExecutionData(_target, address(_adapter), address(_adapter), _shares);
