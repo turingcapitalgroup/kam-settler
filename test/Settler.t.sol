@@ -25,15 +25,12 @@ contract SettlerTest is BaseVaultTest {
         BaseVaultTest.setUp();
 
         vm.prank(users.owner);
-        minterAdapterUSDC.grantRoles(users.relayer, 2);
+        minterAdapterUSDC.grantRoles(address(settler), 2);
 
         vm.prank(users.owner);
-        DNVaultAdapterUSDC.grantRoles(users.relayer, 2);
+        DNVaultAdapterUSDC.grantRoles(address(settler), 2);
 
         _setupTestFees();
-
-        vm.startPrank(users.admin);
-        registry.grantManagerRole(address(settler));
 
         vm.stopPrank();
     }
