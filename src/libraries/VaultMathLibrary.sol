@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import {OptimizedFixedPointMathLib} from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
-import {IkStakingVault} from "../interfaces/IkStakingVault.sol";
+import { IkStakingVault } from "../interfaces/IkStakingVault.sol";
+import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 
 library VaultMathLibrary {
     using OptimizedFixedPointMathLib for uint256;
@@ -13,7 +13,11 @@ library VaultMathLibrary {
     /// @notice Number of seconds in a year
     uint256 constant SECS_PER_YEAR = 31_556_952;
 
-    function computeLastBatchFeesWithAssetsAndSupply(IkStakingVault vault, uint256 _totalAssets, uint256 _totalSupply)
+    function computeLastBatchFeesWithAssetsAndSupply(
+        IkStakingVault vault,
+        uint256 _totalAssets,
+        uint256 _totalSupply
+    )
         internal
         view
         returns (uint256 managementFees, uint256 performanceFees, uint256 totalFees)

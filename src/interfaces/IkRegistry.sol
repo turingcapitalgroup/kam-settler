@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import {IVersioned} from "./IVersioned.sol";
+import { IVersioned } from "./IVersioned.sol";
 
 interface IkRegistry is IVersioned {
     /*//////////////////////////////////////////////////////////////
@@ -126,7 +126,10 @@ interface IkRegistry is IVersioned {
         bytes32 id,
         uint256 maxMintPerBatch,
         uint256 maxRedeemPerBatch
-    ) external payable returns (address);
+    )
+        external
+        payable
+        returns (address);
 
     /// @notice Registers a new vault contract in the protocol's vault management system
     /// @dev This function integrates vaults into the protocol by: (1) Validating the vault isn't already registered,

@@ -2,19 +2,19 @@
 pragma solidity 0.8.30;
 
 // External Libraries
-import {OptimizedOwnableRoles} from "kam/src/vendor/solady/auth/OptimizedOwnableRoles.sol";
+import { OptimizedOwnableRoles } from "kam/src/vendor/solady/auth/OptimizedOwnableRoles.sol";
 
 // Internal Libraries
-import {ExecutionDataLibrary} from "./libraries/ExecutionDataLibrary.sol";
-import {OptimizedFixedPointMathLib, VaultMathLibrary} from "./libraries/VaultMathLibrary.sol";
-import {ExecutionLib, Execution} from "minimal-smart-account/libraries/ExecutionLib.sol";
-import {ModeLib, ModeCode} from "minimal-smart-account/libraries/ModeLib.sol";
+import { ExecutionDataLibrary } from "./libraries/ExecutionDataLibrary.sol";
+import { OptimizedFixedPointMathLib, VaultMathLibrary } from "./libraries/VaultMathLibrary.sol";
+import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
+import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Local Interfaces
-import {IERC7540} from "./interfaces/IERC7540.sol";
-import {IRegistry, IkRegistry} from "./interfaces/IRegistry.sol";
-import {ISettler, IkAssetRouter, IVaultAdapter, IkMinter, IkStakingVault, IkToken} from "./interfaces/ISettler.sol";
-import {IMinimalSmartAccount} from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
+import { IERC7540 } from "./interfaces/IERC7540.sol";
+import { IRegistry, IkRegistry } from "./interfaces/IRegistry.sol";
+import { ISettler, IVaultAdapter, IkAssetRouter, IkMinter, IkStakingVault, IkToken } from "./interfaces/ISettler.sol";
+import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /// @title Settler
 /// @notice Contract responsible for settling batch operations in delta-neutral vaults
@@ -282,7 +282,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         uint256 _totalAssets,
         uint64 _lastFeesChargedManagement,
         uint64 _lastFeesChargedPerformance
-    ) external payable {
+    )
+        external
+        payable
+    {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         kAssetRouter.proposeSettleBatch(
@@ -449,7 +452,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         _batchInfo._pendingShares = kAssetRouter.getRequestedShares(address(_vault), _batchInfo._batchId);
     }
 
-    function _getkMinterBatchInfo(IkMinter _kMinter, bytes32 _batchId)
+    function _getkMinterBatchInfo(
+        IkMinter _kMinter,
+        bytes32 _batchId
+    )
         internal
         view
         returns (IkMinter.BatchInfo memory)
@@ -472,7 +478,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IMinimalSmartAccount _vaultAdapter,
         IkStakingVault _vault,
         BatchInfo memory _batchInfo
-    ) internal returns (AssetData memory _assetData) {
+    )
+        internal
+        returns (AssetData memory _assetData)
+    {
         // Get current shares and assets in the DN adapter
         _assetData._dnAdapterShares = _metavault.balanceOf(address(_vaultAdapter));
         _assetData._dnAdapterAssets = _metavault.convertToAssets(_assetData._dnAdapterShares);
@@ -506,7 +515,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _dnVaultAdapter,
         IkStakingVault _vault
-    ) internal returns (int256) {
+    )
+        internal
+        returns (int256)
+    {
         // Convert pending shares to assets using current adapter totals
         uint256 _requestedAssets = _vault.convertToAssetsWithTotals(_pendingShares, _dnAdapterAssets);
 
@@ -540,7 +552,9 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         address _kMinterAdapter,
         address _vaultAdapter,
         uint256 _nettedShares
-    ) internal {
+    )
+        internal
+    {
         Execution[] memory _executions;
 
         if (_isPositive) {
@@ -577,7 +591,9 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IMinimalSmartAccount _dnVaultAdapter,
         IERC7540 _dnMetaVault,
         int256 _difference
-    ) internal {
+    )
+        internal
+    {
         if (_difference != 0) {
             uint256 _shareValue = _dnMetaVault.convertToShares(_difference.abs());
             _executeRebalanceTransfer(_difference > 0, _dnMetaVault, _kMinterAdapter, _dnVaultAdapter, _shareValue);
@@ -597,7 +613,9 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _vaultAdapter,
         uint256 _shareValue
-    ) internal {
+    )
+        internal
+    {
         Execution[] memory _executions;
 
         if (_isPositive) {
@@ -627,7 +645,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IMinimalSmartAccount _dnVaultAdapter,
         IERC7540 _dnMetaVault,
         int256 _difference
-    ) internal returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance) {
+    )
+        internal
+        returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
+    {
         // Calculate fees and get timestamps
         uint256 _feeShares;
         (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
@@ -645,7 +666,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @return _feeShares Total number of fee shares to charge
     /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _calculateFees(IkStakingVault _vault, int256 _difference)
+    function _calculateFees(
+        IkStakingVault _vault,
+        int256 _difference
+    )
         internal
         view
         returns (uint256 _feeShares, uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
@@ -679,7 +703,11 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _dnMetaVault Address of the delta-neutral meta-vault
     /// @param _dnVaultAdapter Address of the DN vault adapter
     /// @param _feeShares Number of fee shares to transfer
-    function _executeFeeTransfer(IERC7540 _dnMetaVault, IMinimalSmartAccount _dnVaultAdapter, uint256 _feeShares)
+    function _executeFeeTransfer(
+        IERC7540 _dnMetaVault,
+        IMinimalSmartAccount _dnVaultAdapter,
+        uint256 _feeShares
+    )
         internal
     {
         // Get treasury address from registry

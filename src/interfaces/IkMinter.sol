@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import {IVersioned} from "./IVersioned.sol";
+import { IVersioned } from "./IVersioned.sol";
 
 /// @title IkMinter
 /// @notice Interface for institutional minting and redemption operations in the KAM protocol

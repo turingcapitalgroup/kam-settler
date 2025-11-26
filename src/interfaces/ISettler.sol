@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import {IVaultAdapter} from "./IVaultAdapter.sol";
-import {IkAssetRouter} from "./IkAssetRouter.sol";
-import {IkMinter} from "./IkMinter.sol";
-import {IkStakingVault} from "./IkStakingVault.sol";
-import {IkToken} from "./IkToken.sol";
+import { IVaultAdapter } from "./IVaultAdapter.sol";
+import { IkAssetRouter } from "./IkAssetRouter.sol";
+import { IkMinter } from "./IkMinter.sol";
+import { IkStakingVault } from "./IkStakingVault.sol";
+import { IkToken } from "./IkToken.sol";
 
 interface ISettler {
     /*//////////////////////////////////////////////////////////////
@@ -151,7 +151,9 @@ interface ISettler {
         uint256 _totalAssets,
         uint64 _lastFeesChargedManagement,
         uint64 _lastFeesChargedPerformance
-    ) external payable;
+    )
+        external
+        payable;
 
     /// @notice Closes the vault batches
     /// @param _vault the vault to close the batch

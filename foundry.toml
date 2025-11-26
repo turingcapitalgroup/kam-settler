@@ -1,9 +1,49 @@
 [profile.default]
 src = "src"
 out = "out"
-libs = ["lib", "dependencies"]
+libs = ["dependencies"]
+gas_reports = ['*']
+solc_version = "0.8.30"
+optimizer = true
+optimizer_runs = 10_000
+via_ir = true
+ffi = true
+ast = true
+build_info = true
+extra_output = ["storageLayout"]
+dynamic_test_linking = true
+fs_permissions = [{ access = "read-write", path = "." }]
+
+[profile.solx]
+gas_limit = 100_000_000
+
+[fmt]
+bracket_spacing = true
+int_types = "long"
+line_length = 120
+multiline_func_header = "all"
+number_underscore = "thousands"
+quote_style = "double"
+tab_width = 4
+wrap_comments = true
+sort_imports = true
+
+[lint]
+exclude_lints = ["mixed-case-function"]
+
+[rpc_endpoints]
+mainnet = "${RPC_MAINNET}"
+sepolia = "${RPC_SEPOLIA}"
+
+[soldeer]
+# whether soldeer manages remappings
+remappings_generated = false
+# whether soldeer re-generates all remappings when installing, updating or uninstalling deps
+remappings_regenerate = false
+# whether to suffix the remapping with the version: `name-a.b.c`
+remappings_version = false
 
 [dependencies]
-forge-std = "1.11.0"
-
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+forge-std = "1.10.0"
+kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git", branch = "development" }
+minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git", rev = "84037a414f8c8ba013d64079671030623af234c2" }

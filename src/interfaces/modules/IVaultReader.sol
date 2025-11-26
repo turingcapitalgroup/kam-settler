@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import {IVersioned} from "../IVersioned.sol";
-import {BaseVaultTypes} from "../types/BaseVaultTypes.sol";
+import { IVersioned } from "../IVersioned.sol";
+import { BaseVaultTypes } from "../types/BaseVaultTypes.sol";
 
 /// @title IVaultReader
 /// @notice Read-only interface for querying vault state, calculations, and metrics without modifying contract state
