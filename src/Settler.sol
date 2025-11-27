@@ -26,6 +26,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     using OptimizedFixedPointMathLib for int256;
     using ExecutionLib for bytes;
 
+    event ProfitDetected(uint256 amount);
+
     /*//////////////////////////////////////////////////////////////
                               STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
