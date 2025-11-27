@@ -1,6 +1,6 @@
 import { console2 as console } from "forge-std/console2.sol";
-import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
+import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
@@ -44,11 +44,8 @@ contract SettlerTest is BaseVaultTest {
         paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
         vm.startPrank(users.relayer);
 
-        console.log("virtual assets of kminter : ", IVaultAdapter(minterAdapterUSDC).totalAssets());
         uint256 _kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
         uint256 _actualKMinterAssets = erc7540USDC.convertToAssets(_kMinterShares);
-
-        console.log("total assets new in kminter : ", _actualKMinterAssets);
 
         // First execution: approve USDC to erc7540USDC
         Execution[] memory executions1 = new Execution[](1);
@@ -97,7 +94,6 @@ contract SettlerTest is BaseVaultTest {
                 "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
             )
         });
-
 
         bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);
         ModeCode mode3 = ModeLib.encodeSimpleBatch();
@@ -192,20 +188,45 @@ contract SettlerTest is BaseVaultTest {
     }
 
     function test_settler_delta_neutral_netted_positive() public {
-
-        int256 depegBefore = _getDepeg();
         uint256 depositAmount = 100e6;
         uint256 requestAmount = 50e6;
         uint256 netted = depositAmount - requestAmount;
         test_settler_kminter_netted_positive();
-        int256 depegAfter = _getDepeg();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         bytes32 requestId = vault.requestStake(users.alice, depositAmount);
         uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
         uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
-        depegAfter = _getDepeg();
+        assertGt(adapterBalanceAfter, adapterBalanceBefore);
+        assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
+
+        assetRouter.executeSettleBatch(proposalId);
+
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        vm.prank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vm.prank(users.alice);
+        vault.requestStake(users.alice, depositAmount);
+        vm.prank(users.alice);
+        vault.requestUnstake(users.alice, depositAmount);
+
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+    }
+
+    function test_settler_delta_neutral_netted_negative() public {
+        uint256 depositAmount = 50e6;
+        uint256 requestAmount = 100e6;
+        uint256 netted = requestAmount - depositAmount;
+        test_settler_kminter_netted_negative();
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
@@ -253,5 +274,4 @@ contract SettlerTest is BaseVaultTest {
         // Calculate difference between expected and actual
         return int256(_expectedKMinterAssets) - int256(_actualKMinterAssets);
     }
-
 }

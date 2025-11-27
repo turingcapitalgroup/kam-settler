@@ -653,8 +653,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     {
         // Calculate fees and get timestamps
         uint256 _feeShares;
-        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-            _calculateFees(_vault);
+        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) = _calculateFees(_vault);
 
         // If there are fees to charge, execute the transfer
         if (_feeShares > 0) {
@@ -668,9 +667,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @return _feeShares Total number of fee shares to charge
     /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _calculateFees(
-        IkStakingVault _vault
-    )
+    function _calculateFees(IkStakingVault _vault)
         internal
         view
         returns (uint256 _feeShares, uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
