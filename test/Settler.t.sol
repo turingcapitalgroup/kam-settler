@@ -211,7 +211,7 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         vault.requestStake(users.alice, depositAmount);
         vm.prank(users.alice);
-        vault.requestUnstake(users.alice, depositAmount);
+        vault.requestUnstake(users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
     }
@@ -240,9 +240,61 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         vault.requestStake(users.alice, depositAmount);
         vm.prank(users.alice);
-        vault.requestUnstake(users.alice, depositAmount);
+        vault.requestUnstake(users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
+    }
+
+    function test_settler_delta_neutral_kminter_profit() public {
+        _setFeesToZero();
+        uint256 metaVaultProfit = 200e6;
+        uint256 depositAmount = 50e6;
+        uint256 requestAmount = 100e6;
+        uint256 netted = requestAmount - depositAmount;
+        test_settler_kminter_netted_positive();
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertGt(adapterBalanceAfter, adapterBalanceBefore);
+        // No profit from kminter should be transferred to DN strategy
+        assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
+
+        assetRouter.executeSettleBatch(proposalId);
+
+        uint256 aliceSharesBefore = vault.balanceOf(users.alice);
+
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        uint256 gotShares = vault.balanceOf(users.alice) - aliceSharesBefore;
+
+        // Alice shouldnt have any profit(she has on first settlement?)
+        assertEq(vault.convertToAssets(gotShares), depositAmount);
+
+        vm.prank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vm.prank(users.alice);
+        requestId = vault.requestStake(users.alice, depositAmount);
+
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+        assertEq(assetRouter.getSettlementProposal(proposalId).yield, int256(metaVaultProfit - 1));
+        assetRouter.executeSettleBatch(proposalId);
+
+        aliceSharesBefore = vault.balanceOf(users.alice);
+
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        gotShares = vault.balanceOf(users.alice) - aliceSharesBefore;
+
+        // Alice should get the profit now
+        assertEq(vault.convertToAssets(gotShares), depositAmount);
     }
 
     function _closeMinterBatch() internal returns (bytes32 proposalId) {
@@ -273,5 +325,16 @@ contract SettlerTest is BaseVaultTest {
 
         // Calculate difference between expected and actual
         return int256(_expectedKMinterAssets) - int256(_actualKMinterAssets);
+    }
+
+    function _setFeesToZero() internal {
+        vm.startPrank(users.admin);
+        vault.setManagementFee(0);
+        vault.setPerformanceFee(0);
+        vault.setHardHurdleRate(false); // Soft hurdle by default
+        vm.stopPrank();
+
+        vm.prank(users.relayer);
+        registry.setHurdleRate(tokens.usdc, 0);
     }
 }

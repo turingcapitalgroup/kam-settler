@@ -224,7 +224,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         // Rebalance assets between kMinter and DN vault adapter
         int256 _depeg = _getDepeg(_kMinterAdapter, _metavault);
 
-        _rebalance(_kMinterAdapter, _vaultAdapter, _metavault, _depeg);
+        // Do not send profit when total supply is zero, to avoid shares inflation
+        if (_vault.totalSupply() != 0) {
+            _rebalance(_kMinterAdapter, _vaultAdapter, _metavault, _depeg);
+        }
 
         // Calculate and process fees
         (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance) =
