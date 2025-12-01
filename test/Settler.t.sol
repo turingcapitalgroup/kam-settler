@@ -211,9 +211,13 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         vault.requestStake(users.alice, depositAmount);
         vm.prank(users.alice);
-        vault.requestUnstake(users.alice, requestAmount);
+        requestId = vault.requestUnstake(users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        vm.prank(users.alice);
+        vault.claimUnstakedAssets(requestId);
     }
 
     function test_settler_delta_neutral_netted_negative() public {
@@ -223,7 +227,7 @@ contract SettlerTest is BaseVaultTest {
         test_settler_kminter_netted_negative();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, requestAmount);
         uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
         uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
@@ -240,9 +244,14 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         vault.requestStake(users.alice, depositAmount);
         vm.prank(users.alice);
-        vault.requestUnstake(users.alice, requestAmount);
+        requestId = vault.requestUnstake(users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        assetRouter.executeSettleBatch(proposalId);
+
+        vm.prank(users.alice);
+        vault.claimUnstakedAssets(requestId);
     }
 
     function test_settler_delta_neutral_kminter_profit() public {
@@ -293,8 +302,19 @@ contract SettlerTest is BaseVaultTest {
 
         gotShares = vault.balanceOf(users.alice) - aliceSharesBefore;
 
-        // Alice should get the profit now
-        assertEq(vault.convertToAssets(gotShares), depositAmount);
+        // Alice shouldnt profit again
+        assertEq(vault.convertToAssets(gotShares), depositAmount, "not accurate");
+
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+
+        uint256 sharePriceBefore = vault.sharePrice();
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+        assertEq(assetRouter.getSettlementProposal(proposalId).yield, int256(metaVaultProfit - 1));
+        assetRouter.executeSettleBatch(proposalId);
+
+        uint256 sharePriceAfter = vault.sharePrice();
+        // Alice should see profit in the next batch
+        assertGt(sharePriceAfter, sharePriceBefore);
     }
 
     function _closeMinterBatch() internal returns (bytes32 proposalId) {
