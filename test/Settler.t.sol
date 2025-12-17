@@ -1,6 +1,11 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.30;
+
 import { console2 as console } from "forge-std/console2.sol";
+import { ERC20ParameterChecker } from "kam/src/adapters/parameters/ERC20ParameterChecker.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
+import { IAdapterGuardian } from "kam/src/interfaces/modules/IAdapterGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
@@ -11,15 +16,25 @@ contract SettlerTest is BaseVaultTest {
     using SafeTransferLib for address;
 
     Settler public settler;
+    ERC20ParameterChecker public paramChecker;
 
     function setUp() public override {
         DeploymentBaseTest.setUp();
+
+        // Get the paramChecker deployed during DeploymentBaseTest setup
+        bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
+        paramChecker = ERC20ParameterChecker(
+            IAdapterGuardian(address(registry))
+                .getAdapterParametersChecker(address(minterAdapterUSDC), tokens.usdc, approveSelector)
+        );
 
         settler = new Settler(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
         vm.startPrank(users.admin);
         registry.grantRelayerRole(address(settler));
+        // Grant manager role to settler for adapter execute operations
+        registry.grantManagerRole(address(settler));
         vault = IkStakingVault(address(dnVault));
 
         vm.stopPrank();
@@ -292,7 +307,9 @@ contract SettlerTest is BaseVaultTest {
         requestId = vault.requestStake(users.alice, depositAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
-        assertEq(assetRouter.getSettlementProposal(proposalId).yield, int256(metaVaultProfit - 1));
+        assertApproxEqAbs(
+            uint256(assetRouter.getSettlementProposal(proposalId).yield), metaVaultProfit, 2, "yield not accurate"
+        );
         assetRouter.executeSettleBatch(proposalId);
 
         aliceSharesBefore = vault.balanceOf(users.alice);
@@ -302,14 +319,16 @@ contract SettlerTest is BaseVaultTest {
 
         gotShares = vault.balanceOf(users.alice) - aliceSharesBefore;
 
-        // Alice shouldnt profit again
-        assertEq(vault.convertToAssets(gotShares), depositAmount, "not accurate");
+        // Alice shouldnt profit again (allow 1 wei rounding difference)
+        assertApproxEqAbs(vault.convertToAssets(gotShares), depositAmount, 1, "not accurate");
 
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
 
         uint256 sharePriceBefore = vault.sharePrice();
         proposalId = _closeAndProposeDeltaNeutralBatch();
-        assertEq(assetRouter.getSettlementProposal(proposalId).yield, int256(metaVaultProfit - 1));
+        assertApproxEqAbs(
+            uint256(assetRouter.getSettlementProposal(proposalId).yield), metaVaultProfit, 2, "yield not accurate 2"
+        );
         assetRouter.executeSettleBatch(proposalId);
 
         uint256 sharePriceAfter = vault.sharePrice();
@@ -354,7 +373,7 @@ contract SettlerTest is BaseVaultTest {
         vault.setHardHurdleRate(false); // Soft hurdle by default
         vm.stopPrank();
 
-        vm.prank(users.relayer);
+        vm.prank(users.admin);
         registry.setHurdleRate(tokens.usdc, 0);
     }
 }

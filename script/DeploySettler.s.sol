@@ -5,7 +5,7 @@ import { Script } from "forge-std/Script.sol";
 import { console2 as console } from "forge-std/console2.sol";
 
 import { Settler } from "../src/Settler.sol";
-import { IkRegistry } from "../src/interfaces/IkRegistry.sol";
+import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 
 interface Roles {
     function grantRelayerRole(address relayer_) external payable;

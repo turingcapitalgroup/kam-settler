@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { IkStakingVault } from "../interfaces/IkStakingVault.sol";
+import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 
 library VaultMathLibrary {

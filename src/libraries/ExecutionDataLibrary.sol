@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { IERC20 } from "../interfaces/IERC20.sol";
-import { IERC7540 } from "../interfaces/IERC7540.sol";
+import { IERC20 } from "forge-std/interfaces/IERC20.sol";
+import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { Execution } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /**

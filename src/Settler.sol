@@ -11,9 +11,10 @@ import { Execution, ExecutionLib } from "minimal-smart-account/libraries/Executi
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Local Interfaces
-import { IERC7540 } from "./interfaces/IERC7540.sol";
-import { IRegistry, IkRegistry } from "./interfaces/IRegistry.sol";
+import { IRegistry } from "./interfaces/IRegistry.sol";
 import { ISettler, IVaultAdapter, IkAssetRouter, IkMinter, IkStakingVault, IkToken } from "./interfaces/ISettler.sol";
+import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
+import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
 import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /// @title Settler
@@ -207,7 +208,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         // Get all required addresses for the asset
         IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
-        IkStakingVault _vault = IkStakingVault(registry.getVaultByAssetAndType(_asset, uint8(IkRegistry.VaultType.DN)));
+        IkStakingVault _vault =
+            IkStakingVault(registry.getVaultByAssetAndType(_asset, uint8(IRegistryBase.VaultType.DN)));
         IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
         address _target = _getTarget(address(_vaultAdapter));
         IERC7540 _metavault = IERC7540(_target);
@@ -524,7 +526,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         returns (int256)
     {
         // Convert pending shares to assets using current adapter totals
-        uint256 _requestedAssets = _vault.convertToAssetsWithTotals(_pendingShares, _dnAdapterAssets);
+        uint256 _requestedAssets =
+            _vault.convertToAssetsWithTotals(_pendingShares, _dnAdapterAssets, _vault.totalSupply());
 
         // Calculate net difference between deposited and requested
         int256 _nettedAssets_ = int256(_deposited) - int256(_requestedAssets);
