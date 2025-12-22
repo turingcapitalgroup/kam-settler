@@ -2,10 +2,10 @@
 pragma solidity 0.8.30;
 
 import { console2 as console } from "forge-std/console2.sol";
-import { ERC20ParameterChecker } from "kam/src/adapters/parameters/ERC20ParameterChecker.sol";
+import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
-import { IAdapterGuardian } from "kam/src/interfaces/modules/IAdapterGuardian.sol";
+import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
@@ -16,16 +16,16 @@ contract SettlerTest is BaseVaultTest {
     using SafeTransferLib for address;
 
     Settler public settler;
-    ERC20ParameterChecker public paramChecker;
+    ERC20ExecutionValidator public paramChecker;
 
     function setUp() public override {
         DeploymentBaseTest.setUp();
 
         // Get the paramChecker deployed during DeploymentBaseTest setup
         bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
-        paramChecker = ERC20ParameterChecker(
-            IAdapterGuardian(address(registry))
-                .getAdapterParametersChecker(address(minterAdapterUSDC), tokens.usdc, approveSelector)
+        paramChecker = ERC20ExecutionValidator(
+            IExecutionGuardian(address(registry))
+                .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
         settler = new Settler(

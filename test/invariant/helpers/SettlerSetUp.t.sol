@@ -6,9 +6,9 @@ import { SettlerHandler } from "../handlers/SettlerHandler.t.sol";
 import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { ERC20ParameterChecker } from "kam/src/adapters/parameters/ERC20ParameterChecker.sol";
+import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
-import { IAdapterGuardian } from "kam/src/interfaces/modules/IAdapterGuardian.sol";
+import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { BaseVaultTest, DeploymentBaseTest } from "kam/test/utils/BaseVaultTest.sol";
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
@@ -21,7 +21,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
 
     SettlerHandler public settlerHandler;
     Settler public settler;
-    ERC20ParameterChecker public paramChecker;
+    ERC20ExecutionValidator public paramChecker;
 
     uint16 public constant PERFORMANCE_FEE = 2000; // 20%
     uint16 public constant MANAGEMENT_FEE = 100; // 1%
@@ -34,9 +34,9 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
         // Get the paramChecker deployed during DeploymentBaseTest setup
         // We get it from the registry by looking at the approve selector for the minterAdapter
         bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
-        paramChecker = ERC20ParameterChecker(
-            IAdapterGuardian(address(registry))
-                .getAdapterParametersChecker(address(minterAdapterUSDC), tokens.usdc, approveSelector)
+        paramChecker = ERC20ExecutionValidator(
+            IExecutionGuardian(address(registry))
+                .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
         // Deploy settler

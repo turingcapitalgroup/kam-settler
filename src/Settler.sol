@@ -636,7 +636,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _adapter the adapter address
     /// @return _target the target of a given adapter (metavault)
     function _getTarget(address _adapter) internal view returns (address _target) {
-        address[] memory _targets = registry.getAdapterTargets(_adapter);
+        address[] memory _targets = registry.getExecutorTargets(_adapter);
         _target = _targets[0];
     }
 }
