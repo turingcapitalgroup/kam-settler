@@ -758,7 +758,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IERC7540 _metavault,
         IMinimalSmartAccount _kMinterAdapter,
         uint256 _profitAssets,
-        uint16 _profitShareBps, 
+        uint16 _profitShareBps,
         bool _isVaultSettlement
     )
         internal
