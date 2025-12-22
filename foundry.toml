@@ -37,8 +37,7 @@ wrap_comments = true
 sort_imports = true
 
 [lint]
-exclude_lints = ["mixed-case-function"]
-ignore = ["dependencies/**"]
+lint_on_build = false
 
 [rpc_endpoints]
 mainnet = "${RPC_MAINNET}"
