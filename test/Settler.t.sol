@@ -10,6 +10,7 @@ import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
+import { DeploySettlerScript } from "script/DeploySettler.s.sol";
 import { Settler } from "src/Settler.sol";
 
 contract SettlerTest is BaseVaultTest {
@@ -28,13 +29,14 @@ contract SettlerTest is BaseVaultTest {
                 .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
-        settler = new Settler(
+        // Deploy Settler using the deployment script
+        DeploySettlerScript deployScript = new DeploySettlerScript();
+        DeploySettlerScript.SettlerDeployment memory deployment = deployScript.runTest(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
+        settler = Settler(deployment.settler);
+
         vm.startPrank(users.admin);
-        registry.grantRelayerRole(address(settler));
-        // Grant manager role to settler for adapter execute operations
-        registry.grantManagerRole(address(settler));
         vault = IkStakingVault(address(dnVault));
 
         vm.stopPrank();

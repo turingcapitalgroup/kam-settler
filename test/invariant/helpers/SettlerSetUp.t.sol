@@ -14,6 +14,7 @@ import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
+import { DeploySettlerScript } from "script/DeploySettler.s.sol";
 import { Settler } from "src/Settler.sol";
 
 abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
@@ -39,17 +40,12 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
                 .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
-        // Deploy settler
-        settler = new Settler(
+        // Deploy Settler using the deployment script
+        DeploySettlerScript deployScript = new DeploySettlerScript();
+        DeploySettlerScript.SettlerDeployment memory deployment = deployScript.runTest(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
-
-        // Grant relayer role to settler
-        vm.startPrank(users.admin);
-        registry.grantRelayerRole(address(settler));
-        // Grant manager role to settler for adapter execute operations
-        registry.grantManagerRole(address(settler));
-        vm.stopPrank();
+        settler = Settler(deployment.settler);
 
         // Grant roles to settler for adapter operations
         vm.prank(users.owner);
