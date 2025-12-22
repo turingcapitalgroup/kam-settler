@@ -128,18 +128,17 @@ contract SettlerHandler is BaseHandler {
     // //////////////////////////////////////////////////////////////
 
     function getEntryPoints() public pure override returns (bytes4[] memory) {
-        bytes4[] memory _entryPoints = new bytes4[](11);
+        bytes4[] memory _entryPoints = new bytes4[](10);
         _entryPoints[0] = this.settler_mint.selector;
         _entryPoints[1] = this.settler_requestBurn.selector;
         _entryPoints[2] = this.settler_burn.selector;
         _entryPoints[3] = this.settler_closeMinterBatch.selector;
-        _entryPoints[4] = this.settler_proposeMinterSettleBatch.selector;
-        _entryPoints[5] = this.settler_executeSettleBatch.selector;
-        _entryPoints[6] = this.settler_requestStake.selector;
-        _entryPoints[7] = this.settler_requestUnstake.selector;
-        _entryPoints[8] = this.settler_closeAndProposeDNVaultBatch.selector;
-        _entryPoints[9] = this.settler_claimStakedShares.selector;
-        _entryPoints[10] = this.settler_claimUnstakedAssets.selector;
+        _entryPoints[4] = this.settler_executeSettleBatch.selector;
+        _entryPoints[5] = this.settler_requestStake.selector;
+        _entryPoints[6] = this.settler_requestUnstake.selector;
+        _entryPoints[7] = this.settler_closeAndProposeDNVaultBatch.selector;
+        _entryPoints[8] = this.settler_claimStakedShares.selector;
+        _entryPoints[9] = this.settler_claimUnstakedAssets.selector;
         return _entryPoints;
     }
 
@@ -242,7 +241,7 @@ contract SettlerHandler is BaseHandler {
         uint256 balanceBefore = token.balanceOf(address(minterAdapter));
 
         // Use settler to close batch
-        bytes32 proposalId = settler.closeMinterBatch(token);
+        bytes32 proposalId = settler.closeAndProposeMinterBatch(token);
         vm.stopPrank();
 
         pendingMinterUnsettledBatches.add(batchId);
@@ -255,45 +254,12 @@ contract SettlerHandler is BaseHandler {
         if (balanceBefore > balanceAfter) {
             // Positive netting case: tokens deposited to metavault
             minterExpectedAdapterBalance -= (balanceBefore - balanceAfter);
+        } else if (balanceAfter > balanceBefore) {
+            // Negative netting case: tokens redeemed from metavault (sync settlement)
+            minterExpectedAdapterBalance += (balanceAfter - balanceBefore);
         }
 
         minterNettedInBatch = 0;
-        minterActualAdapterBalance = balanceAfter;
-        minterActualAdapterTotalAssets = minterAdapter.totalAssets();
-    }
-
-    function settler_proposeMinterSettleBatch() public {
-        vm.startPrank(relayer);
-        if (pendingMinterUnsettledBatches.count() == 0) {
-            vm.stopPrank();
-            return;
-        }
-        bytes32 batchId = pendingMinterUnsettledBatches.at(0);
-        if (pendingMinterSettlementProposals.count() != 0) {
-            vm.stopPrank();
-            return;
-        }
-
-        // Check if netted is negative (otherwise closeMinterBatch already proposed)
-        (uint256 deposited, uint256 requested) = assetRouter.getBatchIdBalances(address(kMinter), batchId);
-        int256 nettedAmount = int256(deposited) - int256(requested);
-        if (nettedAmount >= 0) {
-            vm.stopPrank();
-            return;
-        }
-
-        // Record balance before redemption
-        uint256 balanceBefore = token.balanceOf(address(minterAdapter));
-
-        bytes32 proposalId = settler.proposeMinterSettleBatch(token, batchId);
-        vm.stopPrank();
-
-        pendingMinterSettlementProposals.add(proposalId);
-
-        // Calculate actual balance change from redemption (accounts for share math precision)
-        uint256 balanceAfter = token.balanceOf(address(minterAdapter));
-        uint256 actualRedeemed = balanceAfter - balanceBefore;
-        minterExpectedAdapterBalance += actualRedeemed;
         minterActualAdapterBalance = balanceAfter;
         minterActualAdapterTotalAssets = minterAdapter.totalAssets();
     }
