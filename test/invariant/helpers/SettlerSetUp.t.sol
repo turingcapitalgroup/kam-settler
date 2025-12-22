@@ -200,7 +200,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
         vm.startPrank(users.relayer);
 
         // Use settler to close batch - this returns the proposalId if netted is positive
-        bytes32 proposalId = settler.closeMinterBatch(token);
+        bytes32 proposalId = settler.closeAndProposeMinterBatch(token);
 
         // Execute the settlement
         assetRouter.executeSettleBatch(proposalId);

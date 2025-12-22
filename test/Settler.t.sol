@@ -179,11 +179,9 @@ contract SettlerTest is BaseVaultTest {
         assertEq(adapterBalanceAfter - adapterBalanceBefore, depositAmount);
 
         uint256 erc7540USDCBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
-        bytes32 currentBatchId = minter.getBatchId(tokens.usdc);
+        // With sync settlement, closeAndProposeMinterBatch handles everything in one call
         bytes32 proposalId = _closeMinterBatch();
-        assertEq(proposalId, bytes32(0));
-
-        proposalId = _proposeMinterBatch(currentBatchId);
+        assertNotEq(proposalId, bytes32(0));
 
         uint256 erc7540USDCBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
 
@@ -338,13 +336,7 @@ contract SettlerTest is BaseVaultTest {
 
     function _closeMinterBatch() internal returns (bytes32 proposalId) {
         vm.startPrank(users.relayer);
-        proposalId = settler.closeMinterBatch(tokens.usdc);
-        vm.stopPrank();
-    }
-
-    function _proposeMinterBatch(bytes32 batchId) internal returns (bytes32 proposalId) {
-        vm.startPrank(users.relayer);
-        proposalId = settler.proposeMinterSettleBatch(tokens.usdc, batchId);
+        proposalId = settler.closeAndProposeMinterBatch(tokens.usdc);
         vm.stopPrank();
     }
 

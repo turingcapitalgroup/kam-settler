@@ -112,7 +112,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         // Validate batch state
         if (_batchInfo.isClosed) revert BatchAlreadyClosed();
         if (_batchInfo.isSettled) revert BatchAlreadySettled();
-        
+
         // Close the batch in the kMinter
         kMinter.closeBatch(_batchInfo.batchId, true);
 
@@ -136,18 +136,17 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
             // Money should always be iddle if not revert and divest 1st.
             Execution[] memory _executions = new Execution[](2);
-            
+
             _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
                 _target, address(_adapter), address(_adapter), _shares
             )[0];
-            _executions[1] = ExecutionDataLibrary.getRedeemExecutionData(_target, address(_adapter), address(_adapter), _shares)[0];
+            _executions[1] =
+                ExecutionDataLibrary.getRedeemExecutionData(_target, address(_adapter), address(_adapter), _shares)[0];
 
             _executeAdapterCall(_adapter, _executions);
 
             _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
-            
         } else {
-
             _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
             Execution[] memory _execution = ExecutionDataLibrary.getDepositExecutionData(
@@ -155,9 +154,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             );
 
             _executeAdapterCall(_adapter, _execution);
-
         }
-            _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -286,7 +284,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             IMinimalSmartAccount(registry.getAdapter(address(kMinter), _proposal.asset));
         IMinimalSmartAccount _vaultAdapter =
             IMinimalSmartAccount(registry.getAdapter(address(_proposal.vault), _proposal.asset));
-        
+
         address _kMinterAdapterAddr = address(_kMinterAdapter);
         address _targetMetavault = _getTarget(_kMinterAdapterAddr);
         IERC7540 _metavault = IERC7540(_targetMetavault);
@@ -320,7 +318,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
                 _targetMetavault, _kMinterAdapterAddr, _kMinterAdapterAddr, _netted.abs()
             );
-            
+
             _executeAdapterCall(_kMinterAdapter, _executions);
         }
     }
