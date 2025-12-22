@@ -1,8 +1,8 @@
 {
   "chainId": 31337,
   "network": "localhost",
-  "timestamp": 1766409032,
+  "timestamp": 1766410640,
   "contracts": {
-    "settler": "0x63fea6E447F120B8Faf85B53cdaD8348e645D80E"
+    "settler": "0xa722bdA6968F50778B973Ae2701e90200C564B49"
   }
 }
