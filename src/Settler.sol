@@ -130,7 +130,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         if (_nettedAmount < 0) {
             // Convert absolute value of netted assets to shares
-            uint256 _shares = _metavault.convertToShares(_nettedAmount.abs()); // TODO: round up
+            uint256 _shares = _metavault.convertToShares(_nettedAmount.abs());
             // Adjust any dust
             while (_metavault.convertToAssets(_shares) < _nettedAmount.abs()) _shares += 1;
 
@@ -291,11 +291,14 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         address _targetMetavault = _getTarget(_kMinterAdapterAddr);
         IERC7540 _metavault = IERC7540(_targetMetavault);
         address _targetCustodial = _getTarget(address(_vaultAdapter));
-        uint256 _netted = uint256(_proposal.netted);
+        int256 _netted = int256(_proposal.netted);
 
         if (_proposal.netted == 0) return;
         if (_proposal.netted > 0) {
-            uint256 _shares = _metavault.convertToShares(_netted);
+            uint256 _nettedAbs = uint256(_netted);
+            uint256 _shares = _metavault.convertToShares(_nettedAbs);
+            // Adjust any dust
+            while (_metavault.convertToAssets(_shares) < _nettedAbs) _shares += 1;
 
             // Execute redemption request through the adapter
             Execution[] memory _executions = new Execution[](2);
@@ -309,13 +312,13 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             // requestRedeem + redeem shares from metavault
             _executeAdapterCall(_vaultAdapter, _executions);
 
-            if (IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) < _netted) revert InsufficientBalance();
+            if (IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) < _nettedAbs) revert InsufficientBalance();
 
             // transfers to CEFFU
-            _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _netted);
+            _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _nettedAbs);
         } else {
             Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
-                _targetMetavault, _kMinterAdapterAddr, _kMinterAdapterAddr, _netted
+                _targetMetavault, _kMinterAdapterAddr, _kMinterAdapterAddr, _netted.abs()
             );
             
             _executeAdapterCall(_kMinterAdapter, _executions);
@@ -638,7 +641,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _adapter the adapter address
     /// @return _target the target of a given adapter (metavault)
     function _getTarget(address _adapter) internal view returns (address _target) {
-        address[] memory _targets = registry.getAdapterTargets(_adapter);
+        address[] memory _targets = registry.getExecutorTargets(_adapter);
         _target = _targets[0];
     }
 }
