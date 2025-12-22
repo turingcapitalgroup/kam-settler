@@ -395,7 +395,8 @@ contract SettlerTest is BaseVaultTest {
     function test_settler_profit_distribution_to_insurance() public {
         _setFeesToZero();
         // Set insurance to 10% target of kMinter total assets, treasury to 0
-        _setupProfitDistribution(1000, 0); // 10% insurance, 0% treasury
+        uint16 insuranceBps = 1000; // 10% insurance target
+        _setupProfitDistribution(insuranceBps, 0); // 10% insurance, 0% treasury
 
         uint256 metaVaultProfit = 200e6;
         uint256 depositAmount = 100e6;
@@ -431,12 +432,44 @@ contract SettlerTest is BaseVaultTest {
         (, address insurance,,) = registry.getSettlementConfig();
         uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
 
+        // Calculate the actual depeg (profit) as the contract does:
+        // depeg = expectedKMinterAssets - actualKMinterAssets
+        // negative depeg = profit (kMinter has MORE assets than expected)
+        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
+        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+
+        // Profit only exists if depeg is negative
+        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+
+        // Calculate expected insurance shares:
+        // Insurance target = kMinterAdapter.totalAssets() * insuranceBps / 10000
+        // Insurance deficit = target - current insurance balance (in assets)
+        uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
+        uint256 insuranceCurrentAssets = erc7540USDC.convertToAssets(insuranceBalanceBefore);
+        uint256 insuranceDeficitAssets =
+            insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
+
+        // Convert profit to shares (this is how contract does it)
+        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
+        // Adjust for dust like the contract does
+        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+            profitShares += 1;
+        }
+
+        // Insurance gets min(profitShares, insuranceDeficitShares)
+        uint256 insuranceDeficitShares = erc7540USDC.convertToShares(insuranceDeficitAssets);
+        uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
+
         // Close and propose DN batch - this should distribute profit
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        // Check insurance received shares
+        // Check insurance received exact expected shares
         uint256 insuranceBalanceAfter = erc7540USDC.balanceOf(insurance);
-        assertGt(insuranceBalanceAfter, insuranceBalanceBefore, "Insurance should receive shares");
+        uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
+
+        assertEq(insuranceSharesReceived, expectedInsuranceShares, "Insurance should receive exact expected shares");
 
         assetRouter.executeSettleBatch(proposalId);
     }
@@ -444,7 +477,8 @@ contract SettlerTest is BaseVaultTest {
     function test_settler_profit_distribution_to_treasury() public {
         _setFeesToZero();
         // Set insurance to 0, treasury to 20%
-        _setupProfitDistribution(0, 2000); // 0% insurance, 20% treasury
+        uint16 treasuryBps = 2000; // 20% treasury
+        _setupProfitDistribution(0, treasuryBps); // 0% insurance, 20% treasury
 
         uint256 metaVaultProfit = 200e6;
         uint256 depositAmount = 100e6;
@@ -480,12 +514,36 @@ contract SettlerTest is BaseVaultTest {
         (address treasury,,,) = registry.getSettlementConfig();
         uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
 
+        // Calculate the actual depeg (profit) as the contract does:
+        // depeg = expectedKMinterAssets - actualKMinterAssets
+        // negative depeg = profit (kMinter has MORE assets than expected)
+        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
+        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+
+        // Profit only exists if depeg is negative
+        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+
+        // Convert profit to shares (this is how contract does it)
+        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
+        // Adjust for dust like the contract does
+        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+            profitShares += 1;
+        }
+
+        // No insurance distribution (insurance bps = 0), so remaining = all profit
+        uint256 remainingShares = profitShares;
+        uint256 expectedTreasuryShares = (remainingShares * treasuryBps) / 10_000;
+
         // Close and propose DN batch - this should distribute profit
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        // Check treasury received shares (20% of profit)
+        // Check treasury received exact expected shares (20% of profit)
         uint256 treasuryBalanceAfter = erc7540USDC.balanceOf(treasury);
-        assertGt(treasuryBalanceAfter, treasuryBalanceBefore, "Treasury should receive shares");
+        uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
+
+        assertEq(treasurySharesReceived, expectedTreasuryShares, "Treasury should receive exact 20% of profit shares");
 
         assetRouter.executeSettleBatch(proposalId);
     }
@@ -495,7 +553,9 @@ contract SettlerTest is BaseVaultTest {
         // Set very small insurance (0.01%) so target is small enough to exceed with profit
         // and treasury at 20% so it gets some of the remaining profit
         // kMinterAdapter has ~14M USDC, so 0.01% = 1400 USDC. We add 5000 USDC profit to exceed target.
-        _setupProfitDistribution(1, 2000); // 0.01% insurance target, 20% treasury
+        uint16 insuranceBps = 1; // 0.01% insurance target
+        uint16 treasuryBps = 2000; // 20% treasury
+        _setupProfitDistribution(insuranceBps, treasuryBps);
 
         uint256 metaVaultProfit = 5000e6; // 5000 USDC - enough to fill insurance target and have remainder for treasury
         uint256 depositAmount = 100e6;
@@ -532,15 +592,56 @@ contract SettlerTest is BaseVaultTest {
         uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
         uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
 
+        // Calculate the actual depeg (profit) as the contract does:
+        // depeg = expectedKMinterAssets - actualKMinterAssets
+        // negative depeg = profit (kMinter has MORE assets than expected)
+        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
+        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+
+        // Profit only exists if depeg is negative
+        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+
+        // Calculate expected distributions:
+        // 1. Insurance deficit = target - current balance
+        uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
+        uint256 insuranceCurrentAssets = erc7540USDC.convertToAssets(insuranceBalanceBefore);
+        uint256 insuranceDeficitAssets =
+            insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
+
+        // Convert profit to shares
+        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
+        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+            profitShares += 1;
+        }
+
+        // Insurance gets min(profitShares, insuranceDeficitShares)
+        uint256 insuranceDeficitShares = erc7540USDC.convertToShares(insuranceDeficitAssets);
+        uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
+
+        // 2. Treasury gets treasuryBps/10000 of REMAINING shares after insurance
+        uint256 remainingSharesAfterInsurance = profitShares - expectedInsuranceShares;
+        uint256 expectedTreasuryShares = (remainingSharesAfterInsurance * treasuryBps) / 10_000;
+
         // Close and propose DN batch - this should distribute profit
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        // Both should receive shares
+        // Verify exact amounts received
         uint256 insuranceBalanceAfter = erc7540USDC.balanceOf(insurance);
         uint256 treasuryBalanceAfter = erc7540USDC.balanceOf(treasury);
 
-        assertGt(insuranceBalanceAfter, insuranceBalanceBefore, "Insurance should receive shares");
-        assertGt(treasuryBalanceAfter, treasuryBalanceBefore, "Treasury should receive shares");
+        uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
+        uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
+
+        assertEq(
+            insuranceSharesReceived, expectedInsuranceShares, "Insurance should receive exact shares to fill deficit"
+        );
+        assertEq(
+            treasurySharesReceived,
+            expectedTreasuryShares,
+            "Treasury should receive exact 20% of remaining profit shares"
+        );
 
         assetRouter.executeSettleBatch(proposalId);
     }
@@ -582,13 +683,56 @@ contract SettlerTest is BaseVaultTest {
 
         uint256 dnAdapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
 
+        // Calculate the actual depeg (profit) as the contract does:
+        // depeg = expectedKMinterAssets - actualKMinterAssets
+        // negative depeg = profit (kMinter has MORE assets than expected)
+        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
+        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+
+        // Profit only exists if depeg is negative
+        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+
+        // Convert profit to shares (this is how contract does it)
+        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
+        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+            profitShares += 1;
+        }
+
+        // No insurance or treasury distribution (both bps = 0), so remaining = all profit shares
+        // Vault adapter gets profitShareBps/10000 of remaining profit shares
+        uint256 remainingShares = profitShares;
+        uint256 expectedVaultAdapterProfitShares = (remainingShares * profitShareBps) / 10_000;
+
         // Close with profit share parameter
         vm.startPrank(users.relayer);
         proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, profitShareBps);
         vm.stopPrank();
 
         uint256 dnAdapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertGt(dnAdapterBalanceAfter, dnAdapterBalanceBefore, "DN adapter should receive shares");
+        uint256 vaultAdapterSharesReceived = dnAdapterBalanceAfter - dnAdapterBalanceBefore;
+
+        // The vault adapter receives shares from two sources:
+        // 1. Netting transfer (deposit amount converted to shares at current rate)
+        // 2. Profit share (profitShareBps of remaining profit)
+        // We calculate netting shares after profit to get post-profit share price
+        uint256 nettingShares = erc7540USDC.convertToShares(depositAmount);
+
+        // Total received should be netting + profit share
+        // But since we're testing profit share specifically, verify the increase is at least the expected profit share
+        // The increase includes both netting and profit share
+        assertGt(vaultAdapterSharesReceived, nettingShares, "DN adapter should receive more than just netting amount");
+
+        // Verify the profit share portion is correct
+        // The total increase minus the base netting should approximately equal the profit share
+        uint256 profitShareReceived = vaultAdapterSharesReceived - nettingShares;
+        assertApproxEqAbs(
+            profitShareReceived,
+            expectedVaultAdapterProfitShares,
+            2, // Allow small rounding tolerance
+            "DN adapter should receive exact 50% of profit shares"
+        );
 
         assetRouter.executeSettleBatch(proposalId);
     }
