@@ -364,7 +364,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             // Adjust any dust
             while (_metavault.convertToAssets(_shares) < _nettedAbs) _shares += 1;
 
-            // Execute redemption request through the adapter
+            // Execute redemption request through the kMinter adapter (which has metavault permissions)
             Execution[] memory _executions = new Execution[](2);
             _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
                 address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
@@ -373,13 +373,14 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                 address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
             )[0];
 
-            // requestRedeem + redeem shares from metavault
-            _executeAdapterCall(_vaultAdapter, _executions);
+            // requestRedeem + redeem shares from metavault using kMinter adapter
+            _executeAdapterCall(_kMinterAdapter, _executions);
 
             if (IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) < _nettedAbs) revert InsufficientBalance();
 
-            // transfers to CEFFU
+            // Transfer USDC from kMinter adapter to CEFFU wallet
             _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _nettedAbs);
+            _executeAdapterCall(_kMinterAdapter, _executions);
         } else {
             Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
                 _targetMetavault, _kMinterAdapterAddr, _kMinterAdapterAddr, _netted.abs()

@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import { console2 as console } from "forge-std/console2.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
+import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
@@ -591,5 +592,231 @@ contract SettlerTest is BaseVaultTest {
         assertGt(dnAdapterBalanceAfter, dnAdapterBalanceBefore, "DN adapter should receive shares");
 
         assetRouter.executeSettleBatch(proposalId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        CUSTODIAL (ALPHA/BETA) TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Test custodial vault settlement when netted is positive (more deposits than redemptions)
+    /// @dev When netted is positive, settler should redeem from metawallet and send USDC to Ceffu wallet
+    function test_settler_custodial_netted_positive() public {
+        // Step 1: Run kMinter positive test to set up base state with kTokens for users
+        test_settler_kminter_netted_positive();
+
+        // Step 2: Users request to stake in Alpha vault (custodial)
+        uint256 depositAmount = 100e6;
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Get the batch ID before closing
+        bytes32 batchId = alphaVault.getBatchId();
+
+        // Step 3: Close the vault batch
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId, true);
+
+        // Step 4: Propose settle batch for the custodial vault
+        // totalAssets is the vault's total assets BEFORE the batch is applied (0 for first batch)
+        // The router will compute netted = deposited - requested
+        uint256 totalAssetsBefore = 0; // First batch, vault has no assets yet
+        vm.prank(users.relayer);
+        bytes32 proposalId =
+            assetRouter.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssetsBefore, 0, 0);
+
+        // Verify yield is 0 in the settlement proposal
+        IkAssetRouter.VaultSettlementProposal memory proposal1 = assetRouter.getSettlementProposal(proposalId);
+        assertEq(proposal1.yield, 0, "Yield should be 0 for first batch");
+
+        // Step 5: Execute settle batch
+        vm.prank(users.relayer);
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Finalise first batch settlement - send initial deposit to Ceffu
+        vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId);
+
+        // Step 6: Claim staked shares
+        vm.prank(users.alice);
+        alphaVault.claimStakedShares(stakeRequestId);
+
+        // Verify Alice received shares
+        uint256 aliceShares = alphaVault.balanceOf(users.alice);
+        assertGt(aliceShares, 0, "Alice should have received shares");
+
+        // Step 7: Now create second batch with positive netted
+        uint256 unstakeAmount = 50e6;
+        vm.prank(users.alice);
+        bytes32 unstakeRequestId = alphaVault.requestUnstake(users.alice, unstakeAmount);
+
+        // Bob makes larger deposit
+        vm.startPrank(users.bob);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        bytes32 bobStakeRequestId = alphaVault.requestStake(users.bob, 150e6);
+        vm.stopPrank();
+
+        // Get batch ID for second batch
+        bytes32 batchId2 = alphaVault.getBatchId();
+
+        // Step 8: Close the second vault batch
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId2, true);
+
+        // Step 9: Propose settle batch
+        // totalAssets is current vault assets BEFORE this batch = depositAmount from first batch
+        // netted will be: 150e6 (bob deposit) - 50e6 (alice unstake) = 100e6 positive
+        uint256 currentTotalAssets = depositAmount; // 100e6 from first batch
+        vm.prank(users.relayer);
+        bytes32 proposalId2 =
+            assetRouter.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, currentTotalAssets, 0, 0);
+
+        // Verify yield is 0 in the settlement proposal
+        IkAssetRouter.VaultSettlementProposal memory proposal2 = assetRouter.getSettlementProposal(proposalId2);
+        assertEq(proposal2.yield, 0, "Yield should be 0 for second batch");
+
+        // Get wallet (Ceffu) balance before
+        uint256 walletBalanceBefore = tokens.usdc.balanceOf(address(wallet));
+
+        // Step 10: Execute settle batch
+        vm.prank(users.relayer);
+        assetRouter.executeSettleBatch(proposalId2);
+
+        // Step 11: Finalise custodial settlement - this should transfer assets to Ceffu
+        vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId2);
+
+        // Verify: Ceffu wallet should have received the netted positive amount (100e6)
+        uint256 walletBalanceAfter = tokens.usdc.balanceOf(address(wallet));
+        assertEq(walletBalanceAfter - walletBalanceBefore, 100e6, "Ceffu wallet should receive netted amount");
+
+        // Claims
+        vm.prank(users.alice);
+        alphaVault.claimUnstakedAssets(unstakeRequestId);
+
+        vm.prank(users.bob);
+        alphaVault.claimStakedShares(bobStakeRequestId);
+
+        // Verify: After all claims, adapter totalAssets should match vault totalAssets
+        uint256 adapterTotalAssets = ALPHAVaultAdapterUSDC.totalAssets();
+        uint256 vaultTotalAssets = alphaVault.totalAssets();
+        assertEq(adapterTotalAssets, vaultTotalAssets, "Adapter totalAssets should match vault totalAssets");
+    }
+
+    /// @notice Test custodial vault settlement when netted is negative (more redemptions than deposits)
+    /// @dev When netted is negative, Ceffu wallet sends USDC to kMinter adapter, settler deposits to metawallet
+    function test_settler_custodial_netted_negative() public {
+        // Step 1: Run kMinter positive test to set up base state with kTokens for users
+        test_settler_kminter_netted_positive();
+
+        // Step 2: First do a positive settlement to give users shares in Alpha vault
+        uint256 initialDeposit = 200e6;
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, initialDeposit);
+        vm.stopPrank();
+
+        bytes32 batchId = alphaVault.getBatchId();
+
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId, true);
+
+        // totalAssets is vault's assets BEFORE this batch (0 for first batch)
+        vm.prank(users.relayer);
+        bytes32 proposalId = assetRouter.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, 0, 0, 0);
+
+        // Verify yield is 0 in the settlement proposal
+        IkAssetRouter.VaultSettlementProposal memory proposal1 = assetRouter.getSettlementProposal(proposalId);
+        assertEq(proposal1.yield, 0, "Yield should be 0 for first batch");
+
+        vm.prank(users.relayer);
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Finalise for the positive case (send to Ceffu)
+        vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId);
+
+        vm.prank(users.alice);
+        alphaVault.claimStakedShares(stakeRequestId);
+
+        // Verify Alice has shares
+        uint256 aliceShares = alphaVault.balanceOf(users.alice);
+        assertGt(aliceShares, 0, "Alice should have shares");
+
+        // Step 3: Now create a negative netted scenario (more redemptions than deposits)
+        uint256 unstakeAmount = 150e6;
+        uint256 newDepositAmount = 50e6;
+
+        // Alice requests unstake
+        vm.prank(users.alice);
+        bytes32 unstakeRequestId = alphaVault.requestUnstake(users.alice, unstakeAmount);
+
+        // Bob makes a small deposit
+        vm.startPrank(users.bob);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        bytes32 bobStakeRequestId = alphaVault.requestStake(users.bob, newDepositAmount);
+        vm.stopPrank();
+
+        // netted = 50e6 (deposit) - 150e6 (unstake) = -100e6 (negative)
+
+        bytes32 batchId2 = alphaVault.getBatchId();
+
+        // Step 4: Close the vault batch
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId2, true);
+
+        // Step 5: Propose settle batch with negative netted
+        // totalAssets is vault's assets BEFORE this batch = initialDeposit from first batch
+        uint256 currentTotalAssets = initialDeposit; // 200e6 from first batch
+        vm.prank(users.relayer);
+        bytes32 proposalId2 =
+            assetRouter.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, currentTotalAssets, 0, 0);
+
+        // Verify yield is 0 in the settlement proposal
+        IkAssetRouter.VaultSettlementProposal memory proposal2 = assetRouter.getSettlementProposal(proposalId2);
+        assertEq(proposal2.yield, 0, "Yield should be 0 for second batch");
+
+        // Step 6: Execute settle batch
+        vm.prank(users.relayer);
+        assetRouter.executeSettleBatch(proposalId2);
+
+        // Step 7: Simulate Ceffu wallet sending funds to kMinter adapter
+        // In production, Ceffu would liquidate positions on Binance and send USDC
+        uint256 nettedAbsolute = 100e6; // |netted| = 100e6
+
+        // Prank as wallet (Ceffu) and transfer USDC to kMinter adapter
+        // First give wallet some USDC
+        deal(tokens.usdc, address(wallet), nettedAbsolute);
+
+        vm.prank(address(wallet));
+        wallet.transfer(tokens.usdc, address(minterAdapterUSDC), nettedAbsolute);
+
+        // Get metavault balance before
+        uint256 metavaultBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
+
+        // Step 8: Finalise custodial settlement - this should deposit the received funds to metawallet
+        vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId2);
+
+        // Verify: Metavault should have received the deposited funds
+        uint256 metavaultBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
+        assertEq(
+            metavaultBalanceAfter - metavaultBalanceBefore, nettedAbsolute, "Metavault should receive deposited amount"
+        );
+
+        // Claims
+        vm.prank(users.alice);
+        alphaVault.claimUnstakedAssets(unstakeRequestId);
+
+        vm.prank(users.bob);
+        alphaVault.claimStakedShares(bobStakeRequestId);
+
+        // Verify: After all claims, adapter totalAssets should match vault totalAssets
+        uint256 adapterTotalAssets = ALPHAVaultAdapterUSDC.totalAssets();
+        uint256 vaultTotalAssets = alphaVault.totalAssets();
+        assertEq(adapterTotalAssets, vaultTotalAssets, "Adapter totalAssets should match vault totalAssets");
     }
 }
