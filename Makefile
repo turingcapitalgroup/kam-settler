@@ -45,25 +45,25 @@ help:
 # Network-specific deployments
 deploy-mainnet:
 	@echo "🔴 Deploying Settler to MAINNET..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 	@$(MAKE) format-output
 
 deploy-mainnet-dry-run:
 	@echo "🔴 [DRY-RUN] Simulating deployment to MAINNET..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 
 deploy-sepolia:
 	@echo "🟡 Deploying Settler to SEPOLIA..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 	@$(MAKE) format-output
 
 deploy-sepolia-dry-run:
 	@echo "🟡 [DRY-RUN] Simulating deployment to SEPOLIA..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 
 # Localhost deployment (full stack: KAM + Settler)
 deploy-localhost: deploy-kam-localhost sync-kam-localhost deploy-settler-localhost
-	@echo "✅ Full localhost deployment complete!"
+	@echo "✅ Full localhost deployment complete!" 
 
 # Deploy KAM protocol to localhost (uses parent KAM repo)
 deploy-kam-localhost:
