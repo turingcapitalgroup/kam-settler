@@ -14,7 +14,8 @@ extra_output = ["storageLayout"]
 dynamic_test_linking = true
 fs_permissions = [
     { access = "read", path = "*" },
-    { access = "read-write", path = "dependencies/kam-v1/deployments" }
+    { access = "read-write", path = "dependencies/kam-v1/deployments" },
+    { access = "read-write", path = "deployments" }
 ]
 
 [profile.solx]
@@ -41,6 +42,7 @@ sort_imports = true
 
 [lint]
 exclude_lints = ["mixed-case-function"]
+exclude_paths = ["dependencies/**"]
 
 [rpc_endpoints]
 mainnet = "${RPC_MAINNET}"
@@ -56,5 +58,5 @@ remappings_version = false
 
 [dependencies]
 forge-std = "1.10.0"
-kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git", rev = "4ccebd2909c1439235790f72854c43cd74698600"}
-minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git", rev = "84037a414f8c8ba013d64079671030623af234c2" }
+kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git" }
+minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git" }

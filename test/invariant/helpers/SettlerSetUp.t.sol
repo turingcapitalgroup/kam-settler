@@ -6,14 +6,15 @@ import { SettlerHandler } from "../handlers/SettlerHandler.t.sol";
 import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { ERC20ParameterChecker } from "kam/src/adapters/parameters/ERC20ParameterChecker.sol";
+import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
-import { IAdapterGuardian } from "kam/src/interfaces/modules/IAdapterGuardian.sol";
+import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { BaseVaultTest, DeploymentBaseTest } from "kam/test/utils/BaseVaultTest.sol";
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
+import { DeploySettlerScript } from "script/DeploySettler.s.sol";
 import { Settler } from "src/Settler.sol";
 
 abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
@@ -21,7 +22,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
 
     SettlerHandler public settlerHandler;
     Settler public settler;
-    ERC20ParameterChecker public paramChecker;
+    ERC20ExecutionValidator public paramChecker;
 
     uint16 public constant PERFORMANCE_FEE = 2000; // 20%
     uint16 public constant MANAGEMENT_FEE = 100; // 1%
@@ -34,22 +35,17 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
         // Get the paramChecker deployed during DeploymentBaseTest setup
         // We get it from the registry by looking at the approve selector for the minterAdapter
         bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
-        paramChecker = ERC20ParameterChecker(
-            IAdapterGuardian(address(registry))
-                .getAdapterParametersChecker(address(minterAdapterUSDC), tokens.usdc, approveSelector)
+        paramChecker = ERC20ExecutionValidator(
+            IExecutionGuardian(address(registry))
+                .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
-        // Deploy settler
-        settler = new Settler(
+        // Deploy Settler using the deployment script
+        DeploySettlerScript deployScript = new DeploySettlerScript();
+        DeploySettlerScript.SettlerDeployment memory deployment = deployScript.runTest(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
-
-        // Grant relayer role to settler
-        vm.startPrank(users.admin);
-        registry.grantRelayerRole(address(settler));
-        // Grant manager role to settler for adapter execute operations
-        registry.grantManagerRole(address(settler));
-        vm.stopPrank();
+        settler = Settler(deployment.settler);
 
         // Grant roles to settler for adapter operations
         vm.prank(users.owner);
@@ -200,7 +196,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
         vm.startPrank(users.relayer);
 
         // Use settler to close batch - this returns the proposalId if netted is positive
-        bytes32 proposalId = settler.closeMinterBatch(token);
+        bytes32 proposalId = settler.closeAndProposeMinterBatch(token);
 
         // Execute the settlement
         assetRouter.executeSettleBatch(proposalId);
