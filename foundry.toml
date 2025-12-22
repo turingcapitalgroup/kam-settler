@@ -42,7 +42,7 @@ sort_imports = true
 
 [lint]
 exclude_lints = ["mixed-case-function"]
-exclude_paths = ["dependencies/**"]
+ignore = ["dependencies/**"]
 
 [rpc_endpoints]
 mainnet = "${RPC_MAINNET}"
