@@ -4,9 +4,172 @@
   "roles": {
     "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "admin": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-    "relayer": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+    "emergencyAdmin": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "guardian": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "relayer": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+    "institution": "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+    "treasury": "0x976EA74026E726554dB657fA54763abd0C3a0aa9",
+    "insurance": "0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
+  },
+  "assets": {
+    "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "WBTC": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+  },
+  "ERC7540s": {
+    "USDC": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "WBTC": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+  },
+  "kTokens": {
+    "kUSD": {
+      "name": "KAM USD",
+      "symbol": "kUSD",
+      "decimals": 6,
+      "maxMintPerBatch": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "maxRedeemPerBatch": "100000000000"
+    },
+    "kBTC": {
+      "name": "KAM BTC",
+      "symbol": "kBTC",
+      "decimals": 8,
+      "maxMintPerBatch": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "maxRedeemPerBatch": "200000000"
+    }
+  },
+  "vaults": {
+    "dnVaultUSDC": {
+      "name": "KAM DN Vault USD",
+      "symbol": "dnkUSD",
+      "decimals": 6,
+      "underlyingAsset": "USDC",
+      "useKToken": false,
+      "maxTotalAssets": 500000000000000,
+      "maxDepositPerBatch": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "maxWithdrawPerBatch": 50000000000000,
+      "trustedForwarder": "0x717AF6845eA3d3A84F22b54E5744AC25EF224C92"
+    },
+    "dnVaultWBTC": {
+      "name": "KAM DN Vault BTC",
+      "symbol": "dnkBTC",
+      "decimals": 8,
+      "underlyingAsset": "WBTC",
+      "useKToken": false,
+      "maxTotalAssets": 20000000000,
+      "maxDepositPerBatch": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "maxWithdrawPerBatch": 2000000000,
+      "trustedForwarder": "0x717AF6845eA3d3A84F22b54E5744AC25EF224C92"
+    },
+    "alphaVault": {
+      "name": "KAM Alpha Vault USD",
+      "symbol": "akUSD",
+      "decimals": 6,
+      "underlyingAsset": "USDC",
+      "useKToken": false,
+      "maxTotalAssets": "200000000000000",
+      "maxDepositPerBatch": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "maxWithdrawPerBatch": 20000000000000,
+      "trustedForwarder": "0x717AF6845eA3d3A84F22b54E5744AC25EF224C92"
+    },
+    "betaVault": {
+      "name": "KAM Beta Vault USD",
+      "symbol": "bkUSD",
+      "decimals": 6,
+      "underlyingAsset": "USDC",
+      "useKToken": false,
+      "maxTotalAssets": 200000000000000,
+      "maxDepositPerBatch": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "maxWithdrawPerBatch": 20000000000000,
+      "trustedForwarder": "0x717AF6845eA3d3A84F22b54E5744AC25EF224C92"
+    }
+  },
+  "registry": {
+    "hurdleRate": {
+      "USDC": 500,
+      "WBTC": 500
+    },
+    "treasuryBps": 1000,
+    "insuranceBps": 500
+  },
+  "assetRouter": {
+    "settlementCooldown": 0,
+    "maxAllowedDelta": 1000
+  },
+  "parameterChecker": {
+    "maxSingleTransfer": {
+      "USDC": "1000000000000",
+      "WBTC": "3000000000",
+      "ERC7540USDC": "1000000000000",
+      "ERC7540WBTC": "3000000000"
+    },
+    "allowedReceivers": {
+      "USDC": [
+        "walletUSDC",
+        "dnVaultAdapterUSDC",
+        "alphaVaultAdapter",
+        "betaVaultAdapter"
+      ],
+      "WBTC": [
+        "walletUSDC",
+        "dnVaultAdapterWBTC"
+      ],
+      "ERC7540USDC": [
+        "kMinterAdapterUSDC",
+        "dnVaultAdapterUSDC"
+      ],
+      "ERC7540WBTC": [
+        "kMinterAdapterWBTC",
+        "dnVaultAdapterWBTC"
+      ]
+    },
+    "allowedSources": {
+      "USDC": [
+        "kMinterAdapterUSDC",
+        "dnVaultAdapterUSDC",
+        "alphaVaultAdapter",
+        "betaVaultAdapter",
+        "treasury"
+      ],
+      "WBTC": [
+        "kMinterAdapterWBTC",
+        "dnVaultAdapterWBTC",
+        "treasury"
+      ],
+      "ERC7540USDC": [
+        "kMinterAdapterUSDC",
+        "dnVaultAdapterUSDC",
+        "treasury"
+      ],
+      "ERC7540WBTC": [
+        "kMinterAdapterWBTC",
+        "dnVaultAdapterWBTC",
+        "treasury"
+      ]
+    },
+    "allowedSpenders": {
+      "USDC": [
+        "ERC7540USDC",
+        "dnVaultAdapterUSDC",
+        "alphaVaultAdapter",
+        "betaVaultAdapter"
+      ],
+      "WBTC": [
+        "ERC7540WBTC",
+        "dnVaultAdapterWBTC"
+      ]
+    }
+  },
+  "mockAssets": {
+    "enabled": true,
+    "mintAmounts": {
+      "USDC": "10000000000000",
+      "WBTC": "100000000000"
+    },
+    "mockTargetAmounts": {
+      "USDC": "1000000000000",
+      "WBTC": "10000000000"
+    },
+    "WalletUSDC": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
   },
   "kam": {
-    "registry": "0xD6CcB4Cfb12893d8090ACf4205FEDda604B50691"
+    "registry": "0xfBAb47B40F7C57AE346B01CdA8a9Bdc9C2771578"
   }
 }

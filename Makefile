@@ -45,25 +45,25 @@ help:
 # Network-specific deployments
 deploy-mainnet:
 	@echo "🔴 Deploying Settler to MAINNET..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	DEPLOYMENT_BASE_PATH=deployments forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 	@$(MAKE) format-output
 
 deploy-mainnet-dry-run:
 	@echo "🔴 [DRY-RUN] Simulating deployment to MAINNET..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	DEPLOYMENT_BASE_PATH=deployments forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_MAINNET} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 
 deploy-sepolia:
 	@echo "🟡 Deploying Settler to SEPOLIA..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	DEPLOYMENT_BASE_PATH=deployments forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --broadcast --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 	@$(MAKE) format-output
 
 deploy-sepolia-dry-run:
 	@echo "🟡 [DRY-RUN] Simulating deployment to SEPOLIA..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow
+	DEPLOYMENT_BASE_PATH=deployments forge script script/DeploySettler.s.sol --sig "run()" --rpc-url ${RPC_SEPOLIA} --account keyDeployer --sender ${DEPLOYER_ADDRESS} --slow -vvv
 
 # Localhost deployment (full stack: KAM + Settler)
 deploy-localhost: deploy-kam-localhost sync-kam-localhost deploy-settler-localhost
-	@echo "✅ Full localhost deployment complete!"
+	@echo "✅ Full localhost deployment complete!" 
 
 # Deploy KAM protocol to localhost (uses parent KAM repo)
 deploy-kam-localhost:
@@ -114,12 +114,12 @@ deploy-settler-localhost:
 		echo "   Run 'make sync-kam-localhost' first"; \
 		exit 1; \
 	fi
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url http://localhost:8545 --broadcast --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --slow
+	DEPLOYMENT_BASE_PATH=deployments forge script script/DeploySettler.s.sol --sig "run()" --rpc-url http://localhost:8545 --broadcast --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --slow
 	@$(MAKE) format-output
 
 deploy-localhost-dry-run:
 	@echo "🟢 [DRY-RUN] Simulating deployment to LOCALHOST..."
-	forge script script/DeploySettler.s.sol --sig "run()" --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --slow
+	DEPLOYMENT_BASE_PATH=deployments forge script script/DeploySettler.s.sol --sig "run()" --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 --slow
 
 # Etherscan verification (mainnet)
 verify-mainnet:
