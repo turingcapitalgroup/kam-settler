@@ -27,6 +27,19 @@ interface ISettler {
     /// @notice Thrown when the balance of the kAssetRouter is insufficient
     error InsufficientBalance();
 
+    /// @notice Thrown when the profit share basis points exceeds 10000
+    error InvalidProfitShareBps();
+
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted when profit is distributed during settlement
+    /// @param insuranceShares Shares sent to insurance
+    /// @param treasuryShares Shares sent to treasury
+    /// @param vaultAdapterShares Shares sent to vault adapter (DN/custodial only)
+    event ProfitDistributed(uint256 insuranceShares, uint256 treasuryShares, uint256 vaultAdapterShares);
+
     /*//////////////////////////////////////////////////////////////
                               STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -81,12 +94,27 @@ interface ISettler {
     /// @param _relayer address to be granted the relayer role
     function grantRelayerRole(address _relayer) external payable;
 
-    /// @notice Closes a delta-neutral vault batch and initiates settlement
+    /// @notice Closes a delta-neutral vault batch and initiates settlement with default profit share
     /// @dev This function handles the complete settlement process for DN vault batches,
-    ///      including rebalancing, fee calculation, and asset netting
+    ///      including rebalancing, fee calculation, and asset netting. Uses 0 profit share.
     /// @param _asset The asset address for which to close the batch
     /// @return _proposalId The proposal ID for the settlement
     function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId);
+
+    /// @notice Closes a delta-neutral vault batch and initiates settlement with profit sharing
+    /// @dev This function handles the complete settlement process for DN vault batches,
+    ///      including rebalancing, fee calculation, asset netting, and profit distribution.
+    ///      Profit is distributed: insurance (up to target) -> treasury -> vault adapter -> kMinter keeps rest
+    /// @param _asset The asset address for which to close the batch
+    /// @param _profitShareBps Basis points of remaining profit (after insurance + treasury) to send to vault adapter
+    /// @return _proposalId The proposal ID for the settlement
+    function closeAndProposeDNVaultBatch(
+        address _asset,
+        uint16 _profitShareBps
+    )
+        external
+        payable
+        returns (bytes32 _proposalId);
 
     /// @notice Closes a kMinter batch and handles asset rebalancing
     /// @dev This function closes the kMinter batch and processes any negative netted assets

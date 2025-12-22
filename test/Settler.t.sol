@@ -2,10 +2,10 @@
 pragma solidity 0.8.30;
 
 import { console2 as console } from "forge-std/console2.sol";
-import { ERC20ParameterChecker } from "kam/src/adapters/parameters/ERC20ParameterChecker.sol";
+import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
-import { IAdapterGuardian } from "kam/src/interfaces/modules/IAdapterGuardian.sol";
+import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
@@ -16,16 +16,16 @@ contract SettlerTest is BaseVaultTest {
     using SafeTransferLib for address;
 
     Settler public settler;
-    ERC20ParameterChecker public paramChecker;
+    ERC20ExecutionValidator public paramChecker;
 
     function setUp() public override {
         DeploymentBaseTest.setUp();
 
         // Get the paramChecker deployed during DeploymentBaseTest setup
         bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
-        paramChecker = ERC20ParameterChecker(
-            IAdapterGuardian(address(registry))
-                .getAdapterParametersChecker(address(minterAdapterUSDC), tokens.usdc, approveSelector)
+        paramChecker = ERC20ExecutionValidator(
+            IExecutionGuardian(address(registry))
+                .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
         settler = new Settler(
@@ -128,7 +128,6 @@ contract SettlerTest is BaseVaultTest {
     function test_settler_kminter_netted_positive() public {
         uint256 depositAmount = 100e6;
         uint256 requestAmount = 50e6;
-        uint256 netted = depositAmount - requestAmount;
 
         vm.startPrank(users.institution);
         tokens.usdc.safeApprove(address(minter), type(uint256).max);
@@ -147,7 +146,7 @@ contract SettlerTest is BaseVaultTest {
         assertNotEq(proposalId, bytes32(0));
         uint256 erc7540USDCBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
 
-        assertEq(erc7540USDCBalanceAfter - erc7540USDCBalanceBefore, netted);
+        assertEq(erc7540USDCBalanceAfter - erc7540USDCBalanceBefore, depositAmount - requestAmount);
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
 
@@ -164,7 +163,6 @@ contract SettlerTest is BaseVaultTest {
     function test_settler_kminter_netted_negative() public {
         uint256 depositAmount = 50e6;
         uint256 requestAmount = 100e6;
-        uint256 nettedNegative = requestAmount - depositAmount;
 
         vm.startPrank(users.institution);
         tokens.usdc.safeApprove(address(minter), type(uint256).max);
@@ -185,7 +183,7 @@ contract SettlerTest is BaseVaultTest {
 
         uint256 erc7540USDCBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
 
-        assertEq(erc7540USDCBalanceBefore - erc7540USDCBalanceAfter, nettedNegative);
+        assertEq(erc7540USDCBalanceBefore - erc7540USDCBalanceAfter, requestAmount - depositAmount);
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
 
         assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
@@ -236,7 +234,6 @@ contract SettlerTest is BaseVaultTest {
     function test_settler_delta_neutral_netted_negative() public {
         uint256 depositAmount = 50e6;
         uint256 requestAmount = 100e6;
-        uint256 netted = requestAmount - depositAmount;
         test_settler_kminter_netted_negative();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
@@ -269,10 +266,9 @@ contract SettlerTest is BaseVaultTest {
 
     function test_settler_delta_neutral_kminter_profit() public {
         _setFeesToZero();
+        _disableProfitDistribution(); // Disable profit distribution to insurance/treasury for this test
         uint256 metaVaultProfit = 200e6;
         uint256 depositAmount = 50e6;
-        uint256 requestAmount = 100e6;
-        uint256 netted = requestAmount - depositAmount;
         test_settler_kminter_netted_positive();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
@@ -367,5 +363,231 @@ contract SettlerTest is BaseVaultTest {
 
         vm.prank(users.admin);
         registry.setHurdleRate(tokens.usdc, 0);
+    }
+
+    function _disableProfitDistribution() internal {
+        vm.stopPrank(); // Stop any existing prank
+        vm.startPrank(users.admin);
+        // Set insurance and treasury BPS to 0 to disable profit distribution
+        registry.setInsuranceBps(0);
+        registry.setTreasuryBps(0);
+        vm.stopPrank();
+    }
+
+    function _setupProfitDistribution(uint16 insuranceBps, uint16 treasuryBps) internal {
+        vm.stopPrank(); // Stop any existing prank
+        vm.startPrank(users.admin);
+        registry.setInsuranceBps(insuranceBps);
+        registry.setTreasuryBps(treasuryBps);
+        // Allow transfers to insurance and treasury for profit distribution
+        (address treasury, address insurance,,) = registry.getSettlementConfig();
+        if (insurance != address(0)) {
+            paramChecker.setAllowedReceiver(address(erc7540USDC), insurance, true);
+        }
+        if (treasury != address(0)) {
+            paramChecker.setAllowedReceiver(address(erc7540USDC), treasury, true);
+        }
+        vm.stopPrank();
+    }
+
+    function test_settler_profit_distribution_to_insurance() public {
+        _setFeesToZero();
+        // Set insurance to 10% target of kMinter total assets, treasury to 0
+        _setupProfitDistribution(1000, 0); // 10% insurance, 0% treasury
+
+        uint256 metaVaultProfit = 200e6;
+        uint256 depositAmount = 100e6;
+
+        // First do a full cycle to get shares minted
+        test_settler_kminter_netted_positive();
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Settle the first DN batch to mint shares to Alice
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Claim shares
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        // Now do another stake request
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Add profit to metavault AFTER shares exist
+        (bool success,) =
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        require(success, "mint failed");
+
+        // Get insurance address and balance before
+        (, address insurance,,) = registry.getSettlementConfig();
+        uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
+
+        // Close and propose DN batch - this should distribute profit
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        // Check insurance received shares
+        uint256 insuranceBalanceAfter = erc7540USDC.balanceOf(insurance);
+        assertGt(insuranceBalanceAfter, insuranceBalanceBefore, "Insurance should receive shares");
+
+        assetRouter.executeSettleBatch(proposalId);
+    }
+
+    function test_settler_profit_distribution_to_treasury() public {
+        _setFeesToZero();
+        // Set insurance to 0, treasury to 20%
+        _setupProfitDistribution(0, 2000); // 0% insurance, 20% treasury
+
+        uint256 metaVaultProfit = 200e6;
+        uint256 depositAmount = 100e6;
+
+        // First do a full cycle to get shares minted
+        test_settler_kminter_netted_positive();
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Settle the first DN batch to mint shares to Alice
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Claim shares
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        // Now do another stake request
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Add profit to metavault AFTER shares exist
+        (bool success,) =
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        require(success, "mint failed");
+
+        // Get treasury address and balance before
+        (address treasury,,,) = registry.getSettlementConfig();
+        uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
+
+        // Close and propose DN batch - this should distribute profit
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        // Check treasury received shares (20% of profit)
+        uint256 treasuryBalanceAfter = erc7540USDC.balanceOf(treasury);
+        assertGt(treasuryBalanceAfter, treasuryBalanceBefore, "Treasury should receive shares");
+
+        assetRouter.executeSettleBatch(proposalId);
+    }
+
+    function test_settler_profit_distribution_insurance_and_treasury() public {
+        _setFeesToZero();
+        // Set very small insurance (0.01%) so target is small enough to exceed with profit
+        // and treasury at 20% so it gets some of the remaining profit
+        // kMinterAdapter has ~14M USDC, so 0.01% = 1400 USDC. We add 5000 USDC profit to exceed target.
+        _setupProfitDistribution(1, 2000); // 0.01% insurance target, 20% treasury
+
+        uint256 metaVaultProfit = 5000e6; // 5000 USDC - enough to fill insurance target and have remainder for treasury
+        uint256 depositAmount = 100e6;
+
+        // First do a full cycle to get shares minted
+        test_settler_kminter_netted_positive();
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Settle the first DN batch to mint shares to Alice
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Claim shares
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        // Now do another stake request
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Add profit to metavault AFTER shares exist
+        (bool success,) =
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        require(success, "mint failed");
+
+        // Get addresses and balances before
+        (address treasury, address insurance,,) = registry.getSettlementConfig();
+        uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
+        uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
+
+        // Close and propose DN batch - this should distribute profit
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        // Both should receive shares
+        uint256 insuranceBalanceAfter = erc7540USDC.balanceOf(insurance);
+        uint256 treasuryBalanceAfter = erc7540USDC.balanceOf(treasury);
+
+        assertGt(insuranceBalanceAfter, insuranceBalanceBefore, "Insurance should receive shares");
+        assertGt(treasuryBalanceAfter, treasuryBalanceBefore, "Treasury should receive shares");
+
+        assetRouter.executeSettleBatch(proposalId);
+    }
+
+    function test_settler_dn_batch_with_profit_share_bps() public {
+        _setFeesToZero();
+        _disableProfitDistribution();
+
+        uint256 metaVaultProfit = 200e6;
+        uint256 depositAmount = 100e6;
+        uint16 profitShareBps = 5000; // 50% profit share to DN vault adapter
+
+        // First do a full cycle to get shares minted
+        test_settler_kminter_netted_positive();
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Settle the first DN batch to mint shares to Alice
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Claim shares
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        // Now do another stake request
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Add profit to metavault AFTER shares exist
+        (bool success,) =
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        require(success, "mint failed");
+
+        uint256 dnAdapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+
+        // Close with profit share parameter
+        vm.startPrank(users.relayer);
+        proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, profitShareBps);
+        vm.stopPrank();
+
+        uint256 dnAdapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertGt(dnAdapterBalanceAfter, dnAdapterBalanceBefore, "DN adapter should receive shares");
+
+        assetRouter.executeSettleBatch(proposalId);
     }
 }
