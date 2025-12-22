@@ -128,7 +128,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         if (_nettedAmount < 0) {
             // Convert absolute value of netted assets to shares
-            uint256 _shares = _metavault.convertToShares(_nettedAmount.abs());
+            uint256 _shares = _metavault.convertToShares(_nettedAmount.abs()); // TODO: round up
             // Adjust any dust
             while (_metavault.convertToAssets(_shares) < _nettedAmount.abs()) _shares += 1;
 
