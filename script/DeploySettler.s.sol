@@ -18,13 +18,6 @@ contract DeploySettlerScript is DeploymentManager {
     /// @dev Reads config from JSON, deploys Settler, writes output to JSON
     /// @return deployment The deployed contract addresses
     function run() public returns (SettlerDeployment memory deployment) {
-        return run(true);
-    }
-
-    /// @notice Deployment with option to skip JSON writing (for tests)
-    /// @param _writeToJson Whether to write deployed addresses to JSON
-    /// @return deployment The deployed contract addresses
-    function run(bool _writeToJson) public returns (SettlerDeployment memory deployment) {
         // 1. Read network config
         NetworkConfig memory config = readNetworkConfig();
 
@@ -65,68 +58,8 @@ contract DeploySettlerScript is DeploymentManager {
         logDeployedContract("Settler", address(settler));
         logExecutionEnd();
 
-        // 8. Write to JSON if requested
-        if (_writeToJson) {
-            writeContractAddress("settler", address(settler));
-        }
-
-        deployment.settler = address(settler);
-    }
-
-    /// @notice Deployment with external dependencies (for tests with mocked contracts)
-    /// @param _writeToJson Whether to write deployed addresses to JSON
-    /// @param _registry External registry address (0 to read from config)
-    /// @return deployment The deployed contract addresses
-    function run(bool _writeToJson, address _registry) public returns (SettlerDeployment memory deployment) {
-        // 1. Read network config
-        NetworkConfig memory config = readNetworkConfig();
-
-        // 2. Override registry if provided
-        if (_registry != address(0)) {
-            config.kam.registry = _registry;
-        }
-
-        // 3. Fetch kMinter and kAssetRouter from registry
-        (address kMinter, address kAssetRouter) = IkRegistry(config.kam.registry).getCoreContracts();
-        config.kam.kMinter = kMinter;
-        config.kam.kAssetRouter = kAssetRouter;
-
-        // 4. Validate config
-        validateConfig(config);
-
-        // 5. Log configuration
-        logScriptHeader("DeploySettler");
-        logRoles(config);
-        logKamAddresses(config);
-        logBroadcaster(config.roles.owner);
-        logExecutionStart();
-
-        // 6. Deploy Settler
-        vm.startBroadcast(config.roles.owner);
-
-        Settler settler = new Settler(
-            config.roles.owner,
-            config.roles.admin,
-            config.roles.relayer,
-            config.kam.kMinter,
-            config.kam.kAssetRouter,
-            config.kam.registry
-        );
-
-        // 7. Grant roles to Settler in registry
-        IkRegistry(config.kam.registry).grantRelayerRole(address(settler));
-        IkRegistry(config.kam.registry).grantManagerRole(address(settler));
-
-        vm.stopBroadcast();
-
-        // 8. Log deployed contract
-        logDeployedContract("Settler", address(settler));
-        logExecutionEnd();
-
-        // 9. Write to JSON if requested
-        if (_writeToJson) {
-            writeContractAddress("settler", address(settler));
-        }
+        // 8. Write to JSON
+        writeContractAddress("settler", address(settler));
 
         deployment.settler = address(settler);
     }
