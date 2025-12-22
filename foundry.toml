@@ -14,7 +14,8 @@ extra_output = ["storageLayout"]
 dynamic_test_linking = true
 fs_permissions = [
     { access = "read", path = "*" },
-    { access = "read-write", path = "dependencies/kam-v1/deployments" }
+    { access = "read-write", path = "dependencies/kam-v1/deployments" },
+    { access = "read-write", path = "deployments" }
 ]
 
 [profile.solx]

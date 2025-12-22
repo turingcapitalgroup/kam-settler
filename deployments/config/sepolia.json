@@ -1,0 +1,14 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+
+  "roles": {
+    "owner": "0x11D5E7dBA0658cAE21BEAA6a1719975cB233A81E",
+    "admin": "0x11D5E7dBA0658cAE21BEAA6a1719975cB233A81E",
+    "relayer": "0x11D5E7dBA0658cAE21BEAA6a1719975cB233A81E"
+  },
+
+  "kam": {
+    "registry": "0x069DaB3Ab85196d9Eb7153e25fa2D7790efF7648"
+  }
+}

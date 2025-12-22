@@ -1,0 +1,8 @@
+{
+  "chainId": 11155111,
+  "network": "sepolia",
+  "timestamp": 1766407344,
+  "contracts": {
+    "settler": "0x99Cf93b91bF7e5dd47925A5531F9eB4eEDD6EFf7"
+  }
+}
