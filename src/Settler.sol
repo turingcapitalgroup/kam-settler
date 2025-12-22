@@ -107,7 +107,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         // Retrieve current batch information
         bytes32 _batchId = kMinter.getBatchId(_asset);
-        IkMinter.BatchInfo memory _batchInfo = _kMinter.getBatchInfo(_batchId);
+        IkMinter.BatchInfo memory _batchInfo = kMinter.getBatchInfo(_batchId);
 
         // Validate batch state
         if (_batchInfo.isClosed) revert BatchAlreadyClosed();
@@ -139,8 +139,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             
             _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
                 _target, address(_adapter), address(_adapter), _shares
-            );
-            _executions[1] = ExecutionDataLibrary.getRedeemExecutionData(_target, address(_adapter), address(_adapter), _shares);
+            )[0];
+            _executions[1] = ExecutionDataLibrary.getRedeemExecutionData(_target, address(_adapter), address(_adapter), _shares)[0];
 
             _executeAdapterCall(_adapter, _executions);
 
@@ -150,11 +150,11 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
             _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
-            Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
+            Execution[] memory _execution = ExecutionDataLibrary.getDepositExecutionData(
                 _target, address(_adapter), address(_adapter), uint256(_nettedAmount)
             );
 
-            _executeAdapterCall(_adapter, _executions);
+            _executeAdapterCall(_adapter, _execution);
 
         }
             _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
@@ -210,16 +210,6 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
         // Propose the batch settlement to the asset router
         _proposalId = kAssetRouter.proposeSettleBatch(
-            _asset,
-            address(_vault),
-            _batchInfo._batchId,
-            _assetData._newTotalAssets,
-            _lastFeesChargedDateManagement,
-            _lastFeesChargedDatePerformance
-        );
-
-        emit ProposeSettleBatch(
-            _proposalId,
             _asset,
             address(_vault),
             _batchInfo._batchId,
@@ -289,7 +279,6 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     ///      kMinter and vault adapters based on the netted amount in the proposal.
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
-        address _kMinterAdapterAddr = address(_kMinterAdapter);
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
 
@@ -298,6 +287,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IMinimalSmartAccount _vaultAdapter =
             IMinimalSmartAccount(registry.getAdapter(address(_proposal.vault), _proposal.asset));
         
+        address _kMinterAdapterAddr = address(_kMinterAdapter);
         address _targetMetavault = _getTarget(_kMinterAdapterAddr);
         IERC7540 _metavault = IERC7540(_targetMetavault);
         address _targetCustodial = _getTarget(address(_vaultAdapter));
@@ -311,10 +301,10 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             Execution[] memory _executions = new Execution[](2);
             _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
                 address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
-            );
+            )[0];
             _executions[1] = ExecutionDataLibrary.getRedeemExecutionData(
                 address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
-            );
+            )[0];
 
             // requestRedeem + redeem shares from metavault
             _executeAdapterCall(_vaultAdapter, _executions);

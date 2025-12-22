@@ -74,21 +74,6 @@ interface ISettler {
     }
 
     /*//////////////////////////////////////////////////////////////
-                              EVENTS
-    //////////////////////////////////////////////////////////////*/
-
-    event ProposeSettleBatch(
-        bytes32 _proposalId,
-        address _asset,
-        address _vault,
-        bytes32 _batchId,
-        uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
-    );
-    event RequestRedeem(address _dnMetaVault, address _kMinterAdapter, address _kMinter, uint256 _shares);
-
-    /*//////////////////////////////////////////////////////////////
                               FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -108,26 +93,11 @@ interface ISettler {
     ///      by requesting redemption from the delta-neutral meta-vault
     /// @param _asset The asset address for which to close the batch
     /// @return _proposalId The proposal ID for the settlement, or bytes32(0) if no netting is needed
-    function closeMinterBatch(address _asset) external payable returns (bytes32 _proposalId);
+    function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId);
 
-    /// @notice Proposes a batch settlement for a kMinter
-    /// @dev Proposes a batch settlement for a kMinter. Calculates netted assets and handles
-    ///      redemption from the delta-neutral meta-vault if needed. Reverts if netted assets
-    ///      are positive (should use closeMinterBatch instead).
-    /// @param _asset The asset address to propose the settlement for
-    /// @param _batchId The batch ID to propose the settlement for
-    /// @return _proposalId The proposal ID for the settlement
-    function proposeMinterSettleBatch(address _asset, bytes32 _batchId) external payable returns (bytes32 _proposalId);
-
-    /// @notice Requests redemption from the meta-vault for a settlement proposal
-    /// @dev Only processes proposals with positive netted amounts (negative netted amounts
-    ///      are handled elsewhere). Does a requestRedeem in the adapter's target metavault.
-    /// @param _proposalId The proposal ID to request redemption for
-    function metavaultRequestRedeem(bytes32 _proposalId) external payable;
-
-    /// @notice Finalises a custodial batch settlement
+    /// @notice Transfer to/from ceffu to/from metawallet
     /// @dev Finalises a custodial batch settlement by handling asset transfers between
-    ///      kMinter and vault adapters based on the netted amount in the proposal
+    ///      kMinter and vault adapters based on the netted amount in the proposal.
     /// @param _proposalId The proposal ID to finalise
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable;
 
@@ -164,16 +134,6 @@ interface ISettler {
     /*//////////////////////////////////////////////////////////////
                               VIEWS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Verifies if a given user address have the admin role
-    /// @param _user the address to verify
-    /// @return _isAdmin if the address have the role or not.
-    function isAdmin(address _user) external view returns (bool _isAdmin);
-
-    /// @notice Verifies if a given user address have the relayer role
-    /// @param _user the address to verify
-    /// @return _isRelayer if the address have the role or not.
-    function isRelayer(address _user) external view returns (bool _isRelayer);
 
     /// @notice Returns if the proposal is netted negative or not
     /// @param _proposalId the proposal to verify the netted value
