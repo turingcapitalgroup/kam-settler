@@ -758,7 +758,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IERC7540 _metavault,
         IMinimalSmartAccount _kMinterAdapter,
         uint256 _profitAssets,
-        uint16 _profitShareBps,
+        uint16 _profitShareBps, 
         bool _isVaultSettlement
     )
         internal
@@ -808,7 +808,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         // The profitShareBps parameter controls how much of this the settled vault keeps vs DN vault
         // (handled by caller for non-DN settlements)
         if (_isVaultSettlement && _remainingShares > 0) {
-            _sharesToVaultAdapter = _remainingShares;
+            _sharesToVaultAdapter = _remainingShares * _profitShareBps / 10_000;
         }
 
         emit ProfitDistributed(_insuranceShares, _treasuryShares, _sharesToVaultAdapter);

@@ -198,6 +198,7 @@ contract CustodialVaultTest is BaseVaultTest {
         uint256 aliceShares = alphaVault.balanceOf(users.alice);
         assertGt(aliceShares, 0, "Alice should have received shares");
         assertEq(ALPHAVaultAdapterUSDC.totalAssets(), alphaVault.totalAssets());
+        assertEq(proposal.yield, 0, "Yield should be zero");
     }
 
     /// @notice Test alpha vault settlement with negative netting (redemptions > deposits)
@@ -232,8 +233,6 @@ contract CustodialVaultTest is BaseVaultTest {
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId1);
-
-        IkAssetRouter.VaultSettlementProposal memory proposal1 = assetRouter.getSettlementProposal(proposalId1);
 
         vm.prank(users.relayer);
         settler.finaliseCustodialSettlement(proposalId1);
@@ -278,6 +277,7 @@ contract CustodialVaultTest is BaseVaultTest {
         alphaVault.claimUnstakedAssets(unstakeRequestId);
 
         assertEq(ALPHAVaultAdapterUSDC.totalAssets(), alphaVault.totalAssets());
+        assertEq(proposal2.yield, 0, "Yield should be zero");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -323,6 +323,8 @@ contract CustodialVaultTest is BaseVaultTest {
         betaVault.claimStakedShares(stakeRequestId);
 
         assertEq(BETHAVaultAdapterUSDC.totalAssets(), betaVault.totalAssets());
+        IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
+        assertEq(proposal.yield, 0, "Yield should be zero");
 
         uint256 aliceShares = betaVault.balanceOf(users.alice);
         assertGt(aliceShares, 0, "Alice should have received shares");
@@ -345,6 +347,7 @@ contract CustodialVaultTest is BaseVaultTest {
         settler.executeSettleBatch(proposalId);
 
         IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
+        assertEq(proposal.yield, 0, "Yield should be zero");
         assertEq(proposal.netted, 0, "Empty batch should have zero netted");
 
         vm.prank(users.relayer);
