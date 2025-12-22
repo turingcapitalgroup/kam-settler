@@ -12,11 +12,7 @@ ast = true
 build_info = true
 extra_output = ["storageLayout"]
 dynamic_test_linking = true
-fs_permissions = [
-    { access = "read", path = "*" },
-    { access = "read-write", path = "dependencies/kam-v1/deployments" },
-    { access = "read-write", path = "deployments" }
-]
+fs_permissions = [{ access = "read-write", path = "." }]
 
 [profile.solx]
 gas_limit = 100_000_000
@@ -41,8 +37,7 @@ wrap_comments = true
 sort_imports = true
 
 [lint]
-exclude_lints = ["mixed-case-function"]
-exclude_paths = ["dependencies/**"]
+lint_on_build = false
 
 [rpc_endpoints]
 mainnet = "${RPC_MAINNET}"
