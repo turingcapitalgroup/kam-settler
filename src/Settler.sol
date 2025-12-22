@@ -303,6 +303,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _totalAssets The total assets for the settlement
     /// @param _lastFeesChargedManagement The timestamp of last management fee charge
     /// @param _lastFeesChargedPerformance The timestamp of last performance fee charge
+    /// @return _proposalId The proposal ID for the settlement
     /// @dev Proposes a settlement batch through the kAssetRouter with fee information
     function proposeSettleBatch(
         address _asset,
@@ -314,10 +315,11 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     )
         external
         payable
+        returns (bytes32 _proposalId)
     {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
-        kAssetRouter.proposeSettleBatch(
+        _proposalId = kAssetRouter.proposeSettleBatch(
             _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
         );
     }
@@ -364,7 +366,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             // Adjust any dust
             while (_metavault.convertToAssets(_shares) < _nettedAbs) _shares += 1;
 
-            // Execute redemption request through the adapter
+            // Execute redemption request through the kMinter adapter
             Execution[] memory _executions = new Execution[](2);
             _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
                 address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
@@ -373,13 +375,14 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                 address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
             )[0];
 
-            // requestRedeem + redeem shares from metavault
-            _executeAdapterCall(_vaultAdapter, _executions);
+            // requestRedeem + redeem shares from metavault using kMinter adapter
+            _executeAdapterCall(_kMinterAdapter, _executions);
 
             if (IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) < _nettedAbs) revert InsufficientBalance();
 
-            // transfers to CEFFU
+            // Transfer assets to custodial target (CEFFU)
             _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _nettedAbs);
+            _executeAdapterCall(_kMinterAdapter, _executions);
         } else {
             Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
                 _targetMetavault, _kMinterAdapterAddr, _kMinterAdapterAddr, _netted.abs()
