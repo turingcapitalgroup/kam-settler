@@ -197,6 +197,7 @@ contract CustodialVaultTest is BaseVaultTest {
 
         uint256 aliceShares = alphaVault.balanceOf(users.alice);
         assertGt(aliceShares, 0, "Alice should have received shares");
+        assertEq(ALPHAVaultAdapterUSDC.totalAssets(), alphaVault.totalAssets());
     }
 
     /// @notice Test alpha vault settlement with negative netting (redemptions > deposits)
@@ -275,6 +276,8 @@ contract CustodialVaultTest is BaseVaultTest {
         // Claim unstaked assets
         vm.prank(users.alice);
         alphaVault.claimUnstakedAssets(unstakeRequestId);
+
+        assertEq(ALPHAVaultAdapterUSDC.totalAssets(), alphaVault.totalAssets());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -319,6 +322,8 @@ contract CustodialVaultTest is BaseVaultTest {
         vm.prank(users.alice);
         betaVault.claimStakedShares(stakeRequestId);
 
+        assertEq(BETHAVaultAdapterUSDC.totalAssets(), betaVault.totalAssets());
+
         uint256 aliceShares = betaVault.balanceOf(users.alice);
         assertGt(aliceShares, 0, "Alice should have received shares");
     }
@@ -328,24 +333,17 @@ contract CustodialVaultTest is BaseVaultTest {
         // Switch to beta vault
         vault = betaVault;
 
-        // Get batch info
         (bytes32 batchId,,,) = betaVault.getCurrentBatchInfo();
 
-        // Step 1: Close the vault batch (empty)
         vm.prank(users.relayer);
         settler.closeVaultBatch(address(betaVault), batchId, true);
 
-        // Step 2: Propose with zero total assets
         vm.prank(users.relayer);
         bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0, 0, 0);
 
-        // Step 3: Execute settlement
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
 
-        // Step 4: No mockWallet transfer needed for empty batch
-
-        // Step 5: Finalise should handle zero netted gracefully
         IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
         assertEq(proposal.netted, 0, "Empty batch should have zero netted");
 
