@@ -182,32 +182,16 @@ contract CustodialVaultTest is BaseVaultTest {
             0 // lastFeesChargedPerformance
         );
 
-        // Verify proposal was created
         IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
         assertEq(proposal.vault, address(alphaVault), "Proposal vault mismatch");
         assertEq(proposal.batchId, batchId, "Proposal batchId mismatch");
 
-        // Step 3: Execute settlement
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
 
-        // Step 4: Simulate mockWallet (Ceffu) transfer if needed
-        // If netted > 0, the vault expects to receive assets from custodial
-        if (proposal.netted > 0) {
-            uint256 nettedAmount = uint256(proposal.netted);
-            // Fund wallet with USDC to simulate Ceffu having the assets
-            deal(tokens.usdc, address(wallet), nettedAmount);
-
-            // Transfer from wallet to kMinter adapter (simulating Ceffu withdrawal)
-            vm.prank(users.relayer);
-            wallet.transfer(tokens.usdc, address(minterAdapterUSDC), nettedAmount);
-        }
-
-        // Step 5: Finalise custodial settlement
         vm.prank(users.relayer);
         settler.finaliseCustodialSettlement(proposalId);
 
-        // Verify settlement completed
         vm.prank(users.alice);
         alphaVault.claimStakedShares(stakeRequestId);
 
@@ -219,6 +203,8 @@ contract CustodialVaultTest is BaseVaultTest {
     function test_custodial_alpha_vault_settlement_negative_netted() public {
         uint256 depositAmount = 50e6;
         uint256 stakeAmount = 100e6;
+
+        test_custodial_alpha_vault_settlement_positive_netted();
 
         // First, setup kMinter with deposits
         _setupKMinterDeposits(depositAmount, 0);
@@ -246,14 +232,7 @@ contract CustodialVaultTest is BaseVaultTest {
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId1);
 
-        // Handle first settlement
         IkAssetRouter.VaultSettlementProposal memory proposal1 = assetRouter.getSettlementProposal(proposalId1);
-        if (proposal1.netted > 0) {
-            uint256 nettedAmount = uint256(proposal1.netted);
-            deal(tokens.usdc, address(wallet), nettedAmount);
-            vm.prank(users.relayer);
-            wallet.transfer(tokens.usdc, address(minterAdapterUSDC), nettedAmount);
-        }
 
         vm.prank(users.relayer);
         settler.finaliseCustodialSettlement(proposalId1);
@@ -281,13 +260,15 @@ contract CustodialVaultTest is BaseVaultTest {
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId2);
 
+        uint256 _amount = alphaVault.convertToAssets(aliceShares);
+
+        // Step 4: For negative netting, CEFFU needs to transfer to kMinterAdapter
+        vm.prank(users.admin);
+        wallet.transfer(tokens.usdc, address(minterAdapterUSDC), _amount);
+
         // Verify proposal has negative netting
         IkAssetRouter.VaultSettlementProposal memory proposal2 = assetRouter.getSettlementProposal(proposalId2);
 
-        // Step 4: For negative netting, no mockWallet transfer needed
-        // The finaliseCustodialSettlement should deposit to metavault
-
-        // Step 5: Finalise custodial settlement
         vm.prank(users.relayer);
         settler.finaliseCustodialSettlement(proposalId2);
 
@@ -317,34 +298,20 @@ contract CustodialVaultTest is BaseVaultTest {
         bytes32 stakeRequestId = betaVault.requestStake(users.alice, depositAmount);
         vm.stopPrank();
 
-        // Get batch info before closing
         (bytes32 batchId,, bool isClosed,) = betaVault.getCurrentBatchInfo();
         assertFalse(isClosed, "Batch should not be closed yet");
 
-        // Step 1: Close the vault batch
         vm.prank(users.relayer);
         settler.closeVaultBatch(address(betaVault), batchId, true);
 
-        // Step 2: Get total assets and propose settlement
         uint256 totalAssets = IVaultAdapter(address(BETHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
         bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets, 0, 0);
 
-        // Step 3: Execute settlement
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
 
-        // Step 4: Simulate mockWallet transfer if netted > 0
-        IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
-        if (proposal.netted > 0) {
-            uint256 nettedAmount = uint256(proposal.netted);
-            deal(tokens.usdc, address(wallet), nettedAmount);
-            vm.prank(users.relayer);
-            wallet.transfer(tokens.usdc, address(minterAdapterUSDC), nettedAmount);
-        }
-
-        // Step 5: Finalise custodial settlement
         vm.prank(users.relayer);
         settler.finaliseCustodialSettlement(proposalId);
 
