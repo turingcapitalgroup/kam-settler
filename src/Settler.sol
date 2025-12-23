@@ -227,14 +227,15 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         _vault.closeBatch(_batchInfo._batchId, true);
 
         // Handle profit distribution and rebalancing
+        // Depeg: positive = surplus/profit, negative = deficit/loss
         int256 _depeg = _getDepeg(_kMinterAdapter, _metavault);
 
         // Do not send profit when total supply is zero, to avoid shares inflation
         if (_vault.totalSupply() != 0) {
-            if (_depeg < 0) {
-                // PROFIT: negative depeg means kMinter has more assets than expected
+            if (_depeg > 0) {
+                // PROFIT: positive depeg means kMinter has more assets than expected (surplus)
                 // Distribute profit: insurance -> treasury -> vault adapter
-                uint256 _profitAssets = uint256(-_depeg);
+                uint256 _profitAssets = uint256(_depeg);
                 uint256 _sharesToVaultAdapter = _distributeProfitShares(
                     _metavault,
                     _kMinterAdapter,
@@ -253,11 +254,11 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                         _sharesToVaultAdapter
                     );
                 }
-            } else if (_depeg > 0) {
-                // LOSS: positive depeg means kMinter needs more assets
+            } else if (_depeg < 0) {
+                // LOSS: negative depeg means kMinter needs more assets (deficit)
                 // Transfer from DN adapter to kMinter adapter (existing behavior)
-                uint256 _shareValue = _metavault.convertToShares(uint256(_depeg));
-                while (_metavault.convertToAssets(_shareValue) < uint256(_depeg)) {
+                uint256 _shareValue = _metavault.convertToShares(uint256(-_depeg));
+                while (_metavault.convertToAssets(_shareValue) < uint256(-_depeg)) {
                     _shareValue += 1;
                 }
                 _executeRebalanceTransfer(true, _metavault, _kMinterAdapter, _vaultAdapter, _shareValue);
@@ -294,6 +295,52 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         kAssetRouter.executeSettleBatch(_proposalId);
+    }
+
+    /// @inheritdoc ISettler
+    /// @param _asset The asset for which to liquidate insurance shares
+    /// @dev Liquidates insurance's metavault shares by calling requestRedeem + redeem
+    ///      through the insurance smart account. After this, insurance will hold
+    ///      underlying assets instead of metavault shares.
+    function liquidateInsurance(address _asset) external payable {
+        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+
+        // Get insurance address from registry
+        (, address _insurance,,) = registry.getSettlementConfig();
+        if (_insurance == address(0)) revert AddressZero();
+
+        // Get the metavault target for the insurance account
+        address[] memory _targets = registry.getExecutorTargets(_insurance);
+        if (_targets.length == 0) revert AddressZero();
+
+        // Find the metavault target (type METAVAULT = 0)
+        address _metavaultAddr;
+        for (uint256 i = 0; i < _targets.length; i++) {
+            if (registry.getTargetType(_targets[i]) == 0) {
+                _metavaultAddr = _targets[i];
+                break;
+            }
+        }
+        if (_metavaultAddr == address(0)) revert AddressZero();
+
+        IERC7540 _metavault = IERC7540(_metavaultAddr);
+
+        // Get insurance's share balance
+        uint256 _shares = _metavault.balanceOf(_insurance);
+        if (_shares == 0) return;
+
+        // Build executions for requestRedeem + redeem
+        Execution[] memory _executions = new Execution[](2);
+
+        _executions[0] =
+            ExecutionDataLibrary.getRequestRedeemExecutionData(_metavaultAddr, _insurance, _insurance, _shares)[0];
+
+        _executions[1] = ExecutionDataLibrary.getRedeemExecutionData(_metavaultAddr, _insurance, _insurance, _shares)[0];
+
+        // Execute through insurance smart account
+        _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
+
+        emit InsuranceLiquidated(_asset, _shares, _metavault.convertToAssets(_shares));
     }
 
     /// @inheritdoc ISettler
@@ -541,10 +588,11 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         }
     }
 
-    /// @notice Rebalances assets between kMinter and DN vault adapters
-    /// @dev Ensures kMinter adapter has the correct amount of assets based on kToken total supply
+    /// @notice Calculates the depeg between actual and expected kMinter adapter assets
+    /// @dev Positive depeg means surplus (profit), negative depeg means deficit (loss)
     /// @param _kMinterAdapter Address of the kMinter adapter
     /// @param _dnMetaVault Address of the delta-neutral meta-vault
+    /// @return Depeg value: positive = surplus/profit, negative = deficit/loss
     function _getDepeg(IMinimalSmartAccount _kMinterAdapter, IERC7540 _dnMetaVault) internal view returns (int256) {
         // Get current shares and assets in kMinter adapter
         uint256 _kMinterShares = _dnMetaVault.balanceOf(address(_kMinterAdapter));
@@ -553,8 +601,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         // Get expected assets based on kToken total supply
         uint256 _expectedKMinterAssets = IVaultAdapter(address(_kMinterAdapter)).totalAssets();
 
-        // Calculate difference between expected and actual
-        return int256(_expectedKMinterAssets) - int256(_actualKMinterAssets);
+        // Calculate difference: positive = surplus (actual > expected), negative = deficit (actual < expected)
+        return int256(_actualKMinterAssets) - int256(_expectedKMinterAssets);
     }
 
     function _rebalance(
@@ -750,7 +798,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @dev All distributions are in metavault shares. Remaining profit stays with kMinter.
     /// @param _metavault The metavault contract
     /// @param _kMinterAdapter The kMinter adapter holding the profit shares
-    /// @param _profitAssets Total profit in assets (absolute value of negative depeg)
+    /// @param _profitAssets Total profit in assets (positive depeg value)
     /// @param _profitShareBps Basis points of remaining profit to send to vault adapter
     /// @param _isVaultSettlement True if this is a DN/custodial vault settlement
     /// @return _sharesToVaultAdapter Shares that should be transferred to vault adapter
