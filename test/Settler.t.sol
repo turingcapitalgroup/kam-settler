@@ -3,11 +3,13 @@ pragma solidity 0.8.30;
 
 import { console2 as console } from "forge-std/console2.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
+import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
+import { MinimalSmartAccount } from "minimal-smart-account/MinimalSmartAccount.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploySettlerScript } from "script/DeploySettler.s.sol";
@@ -333,7 +335,8 @@ contract SettlerTest is BaseVaultTest {
         uint256 _kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
         uint256 _actualKMinterAssets = erc7540USDC.convertToAssets(_kMinterShares);
         uint256 _expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        return int256(_expectedKMinterAssets) - int256(_actualKMinterAssets);
+        // Positive = surplus/profit, Negative = deficit/loss
+        return int256(_actualKMinterAssets) - int256(_expectedKMinterAssets);
     }
 
     function _setFeesToZero() internal {
@@ -406,9 +409,10 @@ contract SettlerTest is BaseVaultTest {
         uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
         uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+        // Positive = surplus/profit, Negative = deficit/loss
+        int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
 
-        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+        uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
         uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
         uint256 insuranceCurrentAssets = erc7540USDC.convertToAssets(insuranceBalanceBefore);
@@ -469,9 +473,10 @@ contract SettlerTest is BaseVaultTest {
         uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
         uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+        // Positive = surplus/profit, Negative = deficit/loss
+        int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
 
-        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+        uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
         uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
         while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
@@ -529,9 +534,10 @@ contract SettlerTest is BaseVaultTest {
         uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
         uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+        // Positive = surplus/profit, Negative = deficit/loss
+        int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
 
-        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+        uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
         uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
         uint256 insuranceCurrentAssets = erc7540USDC.convertToAssets(insuranceBalanceBefore);
@@ -598,9 +604,10 @@ contract SettlerTest is BaseVaultTest {
         uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
         uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        int256 depeg = int256(expectedKMinterAssets) - int256(actualKMinterAssets);
+        // Positive = surplus/profit, Negative = deficit/loss
+        int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
 
-        uint256 profitAssets = depeg < 0 ? uint256(-depeg) : 0;
+        uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
         uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
         while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
@@ -625,5 +632,122 @@ contract SettlerTest is BaseVaultTest {
         assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, 2);
 
         assetRouter.executeSettleBatch(proposalId);
+    }
+
+    function test_settler_liquidate_insurance() public {
+        _setFeesToZero();
+        uint16 insuranceBps = 1000;
+        _setupProfitDistribution(insuranceBps, 0);
+
+        uint256 metaVaultProfit = 200e6;
+        uint256 depositAmount = 100e6;
+
+        // Setup: first do a kMinter batch
+        test_settler_kminter_netted_positive();
+
+        // Stake in DN vault
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        vm.prank(users.alice);
+        vault.claimStakedShares(requestId);
+
+        // Second stake to create more activity
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vault.requestStake(users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Mint profit to metavault
+        (bool success,) =
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        require(success);
+
+        // Close batch - this should distribute profit to insurance
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+        assetRouter.executeSettleBatch(proposalId);
+
+        // Get insurance address and verify it has shares
+        (, address insurance,,) = registry.getSettlementConfig();
+        uint256 insuranceSharesBefore = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceAssetsBefore = tokens.usdc.balanceOf(insurance);
+
+        // Insurance should have received some shares
+        assertGt(insuranceSharesBefore, 0);
+
+        // Setup insurance account permissions for requestRedeem and redeem
+        _setupInsurancePermissions(insurance);
+
+        // Liquidate insurance - convert shares to underlying assets
+        vm.startPrank(users.relayer);
+        settler.liquidateInsurance(tokens.usdc);
+        vm.stopPrank();
+
+        // Verify insurance now has assets instead of shares
+        uint256 insuranceSharesAfter = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceAssetsAfter = tokens.usdc.balanceOf(insurance);
+
+        // Shares should be gone (or significantly reduced)
+        assertEq(insuranceSharesAfter, 0);
+
+        // Assets should have increased by approximately the value of shares redeemed
+        uint256 expectedAssets = erc7540USDC.convertToAssets(insuranceSharesBefore);
+        assertApproxEqAbs(insuranceAssetsAfter - insuranceAssetsBefore, expectedAssets, 1);
+    }
+
+    function test_settler_liquidate_insurance_no_shares() public {
+        // Disable profit distribution so insurance gets no shares
+        _disableProfitDistribution();
+
+        // Get insurance address
+        (, address insurance,,) = registry.getSettlementConfig();
+
+        // Setup permissions even though we have no shares
+        _setupInsurancePermissions(insurance);
+
+        // Verify insurance has no shares
+        uint256 insuranceSharesBefore = erc7540USDC.balanceOf(insurance);
+        assertEq(insuranceSharesBefore, 0);
+
+        // Liquidate should return early without reverting
+        vm.startPrank(users.relayer);
+        settler.liquidateInsurance(tokens.usdc);
+        vm.stopPrank();
+
+        // Verify nothing changed
+        uint256 insuranceSharesAfter = erc7540USDC.balanceOf(insurance);
+        assertEq(insuranceSharesAfter, 0);
+    }
+
+    function _setupInsurancePermissions(address insurance) internal {
+        vm.stopPrank();
+
+        // The insurance smart account is a base MinimalSmartAccount (not SmartAdapterAccount)
+        // so it checks EXECUTOR_ROLE (_ROLE_1 = 2) on the caller, not isManager()
+        // We need to grant this role from the owner of the insurance account
+        vm.startPrank(users.owner);
+        // Grant EXECUTOR_ROLE (value = 2) to settler on the insurance smart account
+        MinimalSmartAccount(payable(insurance)).grantRoles(address(settler), 2);
+        vm.stopPrank();
+
+        vm.startPrank(users.admin);
+
+        // Set up insurance executor permissions for metavault operations
+        bytes4 requestRedeemSelector = IERC7540.requestRedeem.selector;
+        bytes4 redeemSelector = IERC7540.redeem.selector;
+
+        // Cast registry to IExecutionGuardian to access setAllowedSelector
+        IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
+
+        // Allow insurance to call requestRedeem and redeem on the metavault (targetType = 0 for METAVAULT)
+        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, requestRedeemSelector, true);
+        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, redeemSelector, true);
+
+        vm.stopPrank();
     }
 }
