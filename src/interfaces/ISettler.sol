@@ -40,6 +40,12 @@ interface ISettler {
     /// @param vaultAdapterShares Shares sent to vault adapter (DN/custodial only)
     event ProfitDistributed(uint256 insuranceShares, uint256 treasuryShares, uint256 vaultAdapterShares);
 
+    /// @notice Emitted when insurance shares are liquidated to underlying assets
+    /// @param asset The asset for which insurance was liquidated
+    /// @param shares The number of shares redeemed
+    /// @param assets The amount of underlying assets received
+    event InsuranceLiquidated(address indexed asset, uint256 shares, uint256 assets);
+
     /*//////////////////////////////////////////////////////////////
                               STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -160,6 +166,12 @@ interface ISettler {
     /// @param _batchId the batch to be closed
     /// @param _create if we create a new batch or not
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable;
+
+    /// @notice Liquidates insurance's metavault shares to underlying assets
+    /// @dev Calls requestRedeem + redeem through the insurance smart account.
+    ///      After execution, insurance will hold underlying assets instead of metavault shares.
+    /// @param _asset The asset for which to liquidate insurance shares
+    function liquidateInsurance(address _asset) external payable;
 
     /*//////////////////////////////////////////////////////////////
                               VIEWS
