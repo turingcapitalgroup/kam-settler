@@ -146,16 +146,16 @@ interface ISettler {
     /// @param _vault The vault address for the settlement
     /// @param _batchId The batch ID for the settlement
     /// @param _totalAssets The total assets for the settlement
-    /// @param _lastFeesChargedManagement The timestamp of last management fee charge
-    /// @param _lastFeesChargedPerformance The timestamp of last performance fee charge
+    /// @param _chargeManagementFees Whether to charge management fees in this settlement
+    /// @param _chargePerformanceFees Whether to charge performance fees in this settlement
     /// @return _proposalId The proposal ID for the settlement
     function proposeSettleBatch(
         address _asset,
         address _vault,
         bytes32 _batchId,
         uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
+        bool _chargeManagementFees,
+        bool _chargePerformanceFees
     )
         external
         payable

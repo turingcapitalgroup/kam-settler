@@ -86,7 +86,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _relayer The address to grant relayer role to
     /// @dev Grants relayer role to the specified address. Only callable by admin.
     function grantRelayerRole(address _relayer) external payable {
-        hasAnyRole(msg.sender, ADMIN_ROLE);
+        if (!hasAnyRole(msg.sender, ADMIN_ROLE)) revert Unauthorized();
         _grantRoles(_relayer, RELAYER_ROLE);
     }
 
@@ -160,7 +160,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
 
             _executeAdapterCall(_adapter, _execution);
         }
-        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, false, false);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -266,8 +266,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         }
 
         // Calculate and process fees
-        (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance) =
-            _fees(_vault, _vaultAdapter, _metavault);
+        (bool _chargeManagementFees, bool _chargePerformanceFees) = _fees(_vault, _vaultAdapter, _metavault);
 
         // Calculate final asset data for settlement
         AssetData memory _assetData =
@@ -279,8 +278,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             address(_vault),
             _batchInfo._batchId,
             _assetData._newTotalAssets,
-            _lastFeesChargedDateManagement,
-            _lastFeesChargedDatePerformance
+            _chargeManagementFees,
+            _chargePerformanceFees
         );
     }
 
@@ -348,8 +347,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _vault The vault address for the settlement
     /// @param _batchId The batch ID for the settlement
     /// @param _totalAssets The total assets for the settlement
-    /// @param _lastFeesChargedManagement The timestamp of last management fee charge
-    /// @param _lastFeesChargedPerformance The timestamp of last performance fee charge
+    /// @param _chargeManagementFees Whether to charge management fees in this settlement
+    /// @param _chargePerformanceFees Whether to charge performance fees in this settlement
     /// @return _proposalId The proposal ID for the settlement
     /// @dev Proposes a settlement batch through the kAssetRouter with fee information
     function proposeSettleBatch(
@@ -357,8 +356,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         address _vault,
         bytes32 _batchId,
         uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
+        bool _chargeManagementFees,
+        bool _chargePerformanceFees
     )
         external
         payable
@@ -367,7 +366,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         _proposalId = kAssetRouter.proposeSettleBatch(
-            _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
+            _asset, _vault, _batchId, _totalAssets, _chargeManagementFees, _chargePerformanceFees
         );
     }
 
@@ -659,19 +658,19 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @param _vault Address of the vault to calculate fees for
     /// @param _dnVaultAdapter Address of the DN vault adapter
     /// @param _dnMetaVault Address of the delta-neutral meta-vault
-    /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
-    /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
+    /// @return _chargeManagementFees Whether management fees should be charged
+    /// @return _chargePerformanceFees Whether performance fees should be charged
     function _fees(
         IkStakingVault _vault,
         IMinimalSmartAccount _dnVaultAdapter,
         IERC7540 _dnMetaVault
     )
         internal
-        returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
+        returns (bool _chargeManagementFees, bool _chargePerformanceFees)
     {
-        // Calculate fees and get timestamps
+        // Calculate fees and determine which fees to charge
         uint256 _feeShares;
-        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) = _calculateFees(_vault);
+        (_feeShares, _chargeManagementFees, _chargePerformanceFees) = _calculateFees(_vault);
 
         // If there are fees to charge, execute the transfer
         if (_feeShares > 0) {
@@ -683,12 +682,12 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     /// @dev Determines if fees are due and calculates the total fee shares
     /// @param _vault Address of the vault to calculate fees for
     /// @return _feeShares Total number of fee shares to charge
-    /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
-    /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
+    /// @return _chargeManagementFees Whether management fees should be charged
+    /// @return _chargePerformanceFees Whether performance fees should be charged
     function _calculateFees(IkStakingVault _vault)
         internal
         view
-        returns (uint256 _feeShares, uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
+        returns (uint256 _feeShares, bool _chargeManagementFees, bool _chargePerformanceFees)
     {
         // Get next fee timestamps from vault reader
         uint256 _managementFeeTimestamp = _vault.nextManagementFeeTimestamp();
@@ -703,13 +702,13 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         // Check if management fee is due
         if (zeroFloorSub(block.timestamp, _managementFeeTimestamp) > 0) {
             _feeShares += _managementFee;
-            _lastFeesChargedDateManagement = uint64(block.timestamp);
+            _chargeManagementFees = true;
         }
 
         // Check if performance fee is due
         if (zeroFloorSub(block.timestamp, _performanceFeeTimestamp) > 0) {
             _feeShares += _performanceFee;
-            _lastFeesChargedDatePerformance = uint64(block.timestamp);
+            _chargePerformanceFees = true;
         }
     }
 

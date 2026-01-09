@@ -178,8 +178,8 @@ contract CustodialVaultTest is BaseVaultTest {
             address(alphaVault),
             batchId,
             totalAssets, // Pass actual total assets
-            0, // lastFeesChargedManagement
-            0 // lastFeesChargedPerformance
+            false, // chargeManagementFees
+            false // chargePerformanceFees
         );
 
         IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
@@ -229,7 +229,8 @@ contract CustodialVaultTest is BaseVaultTest {
         uint256 totalAssets1 = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId1 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId1, totalAssets1, 0, 0);
+        bytes32 proposalId1 =
+            settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId1, totalAssets1, false, false);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId1);
@@ -255,7 +256,8 @@ contract CustodialVaultTest is BaseVaultTest {
         uint256 totalAssets2 = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId2 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, totalAssets2, 0, 0);
+        bytes32 proposalId2 =
+            settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, totalAssets2, false, false);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId2);
@@ -310,7 +312,8 @@ contract CustodialVaultTest is BaseVaultTest {
         uint256 totalAssets = IVaultAdapter(address(BETHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets, 0, 0);
+        bytes32 proposalId =
+            settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets, false, false);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
@@ -341,7 +344,7 @@ contract CustodialVaultTest is BaseVaultTest {
         settler.closeVaultBatch(address(betaVault), batchId, true);
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0, false, false);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);

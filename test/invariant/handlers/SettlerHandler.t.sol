@@ -178,7 +178,13 @@ contract SettlerHandler is BaseHandler {
             return;
         }
         kToken.safeApprove(address(kMinter), amount);
-        if (assetRouter.virtualBalance(address(kMinter), token) < amount) {
+
+        // Check cumulative requested amount against virtual balance (not just this request)
+        bytes32 batchId = kMinter.getBatchId(token);
+        (, uint256 currentRequested) = assetRouter.getBatchIdBalances(address(kMinter), batchId);
+        uint256 newTotalRequested = currentRequested + amount;
+
+        if (assetRouter.virtualBalance(address(kMinter), token) < newTotalRequested) {
             vm.expectRevert();
             kMinter.requestBurn(token, actor, amount);
             vm.stopPrank();

@@ -7,6 +7,7 @@ import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
+import { Ownable } from "kam/src/vendor/solady/auth/Ownable.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { MinimalSmartAccount } from "minimal-smart-account/MinimalSmartAccount.sol";
@@ -749,5 +750,49 @@ contract SettlerTest is BaseVaultTest {
         guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, redeemSelector, true);
 
         vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ACCESS CONTROL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_grantRelayerRole_succeeds_when_admin() public {
+        address newRelayer = makeAddr("newRelayer");
+
+        // Verify newRelayer doesn't have relayer role initially
+        // RELAYER_ROLE = _ROLE_1 = 2
+        assertFalse(settler.hasAnyRole(newRelayer, 2));
+
+        // Admin grants relayer role
+        vm.prank(users.admin);
+        settler.grantRelayerRole(newRelayer);
+
+        // Verify newRelayer now has relayer role
+        assertTrue(settler.hasAnyRole(newRelayer, 2));
+    }
+
+    function test_grantRelayerRole_reverts_when_not_admin() public {
+        address newRelayer = makeAddr("newRelayer");
+        address attacker = makeAddr("attacker");
+
+        // Attacker tries to grant relayer role - should revert
+        vm.prank(attacker);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        settler.grantRelayerRole(newRelayer);
+
+        // Verify newRelayer doesn't have relayer role
+        assertFalse(settler.hasAnyRole(newRelayer, 2));
+    }
+
+    function test_grantRelayerRole_reverts_when_relayer() public {
+        address newRelayer = makeAddr("newRelayer");
+
+        // Even an existing relayer cannot grant new relayer roles
+        vm.prank(users.relayer);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        settler.grantRelayerRole(newRelayer);
+
+        // Verify newRelayer doesn't have relayer role
+        assertFalse(settler.hasAnyRole(newRelayer, 2));
     }
 }
