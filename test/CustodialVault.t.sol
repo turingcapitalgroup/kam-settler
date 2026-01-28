@@ -26,6 +26,8 @@ contract CustodialVaultTest is BaseVaultTest {
     ERC20ExecutionValidator public paramChecker;
 
     function setUp() public override {
+        // Point to kam-v1's deployments folder which has the complete config
+        vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
         DeploymentBaseTest.setUp();
 
         // Get the paramChecker deployed during DeploymentBaseTest setup
@@ -154,7 +156,7 @@ contract CustodialVaultTest is BaseVaultTest {
         // User stakes kUSD in alpha vault
         vm.startPrank(users.alice);
         kUSD.approve(address(alphaVault), type(uint256).max);
-        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, depositAmount);
+        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         // Get batch info before closing
@@ -217,7 +219,7 @@ contract CustodialVaultTest is BaseVaultTest {
         // User stakes kUSD in alpha vault
         vm.startPrank(users.alice);
         kUSD.approve(address(alphaVault), type(uint256).max);
-        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, stakeAmount);
+        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, users.alice, stakeAmount);
         vm.stopPrank();
 
         // Close and settle first batch to get shares
@@ -298,7 +300,7 @@ contract CustodialVaultTest is BaseVaultTest {
         // User stakes kUSD in beta vault
         vm.startPrank(users.alice);
         kUSD.approve(address(betaVault), type(uint256).max);
-        bytes32 stakeRequestId = betaVault.requestStake(users.alice, depositAmount);
+        bytes32 stakeRequestId = betaVault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         (bytes32 batchId,, bool isClosed,) = betaVault.getCurrentBatchInfo();

@@ -24,6 +24,8 @@ contract SettlerTest is BaseVaultTest {
     ERC20ExecutionValidator public paramChecker;
 
     function setUp() public override {
+        // Point to kam-v1's deployments folder which has the complete config
+        vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
         DeploymentBaseTest.setUp();
 
         bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
@@ -203,7 +205,7 @@ contract SettlerTest is BaseVaultTest {
         test_settler_kminter_netted_positive();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
         uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
@@ -218,7 +220,7 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         vm.prank(users.alice);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.prank(users.alice);
         requestId = vault.requestUnstake(users.alice, requestAmount);
 
@@ -235,7 +237,7 @@ contract SettlerTest is BaseVaultTest {
         test_settler_kminter_netted_negative();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, requestAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, requestAmount);
         uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
         uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
@@ -250,7 +252,7 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         vm.prank(users.alice);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.prank(users.alice);
         requestId = vault.requestUnstake(users.alice, requestAmount);
 
@@ -270,7 +272,7 @@ contract SettlerTest is BaseVaultTest {
         test_settler_kminter_netted_positive();
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
 
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
@@ -293,7 +295,7 @@ contract SettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         vm.prank(users.alice);
-        requestId = vault.requestStake(users.alice, depositAmount);
+        requestId = vault.requestStake(users.alice, users.alice, depositAmount);
 
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
 
@@ -385,7 +387,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -396,7 +398,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         (bool success,) =
@@ -449,7 +451,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -460,7 +462,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         (bool success,) =
@@ -509,7 +511,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -520,7 +522,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         (bool success,) =
@@ -581,7 +583,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -592,7 +594,7 @@ contract SettlerTest is BaseVaultTest {
 
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         (bool success,) =
@@ -631,6 +633,10 @@ contract SettlerTest is BaseVaultTest {
         uint256 profitShareReceived = vaultAdapterSharesReceived - nettingShares;
         assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, 2);
 
+        // Large yields require guardian approval before execution
+        vm.prank(users.guardian);
+        assetRouter.acceptProposal(proposalId);
+
         assetRouter.executeSettleBatch(proposalId);
     }
 
@@ -648,7 +654,7 @@ contract SettlerTest is BaseVaultTest {
         // Stake in DN vault
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        bytes32 requestId = vault.requestStake(users.alice, depositAmount);
+        bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -660,7 +666,7 @@ contract SettlerTest is BaseVaultTest {
         // Second stake to create more activity
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
-        vault.requestStake(users.alice, depositAmount);
+        vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
         // Mint profit to metavault

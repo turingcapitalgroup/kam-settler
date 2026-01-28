@@ -140,6 +140,11 @@ interface ISettler {
     /// @param _proposalId The proposal ID to execute
     function executeSettleBatch(bytes32 _proposalId) external payable;
 
+    /// @notice Accepts a proposal where yield exceeded the delta
+    /// @dev Backend call this, and sends to forDefi for approval
+    /// @param _proposalId The proposal ID to execute
+    function acceptProposal(bytes32 _proposalId) external;
+
     /// @notice Proposes a settlement batch through the kAssetRouter
     /// @dev Proposes a settlement batch through the kAssetRouter with fee information
     /// @param _asset The asset address for the settlement

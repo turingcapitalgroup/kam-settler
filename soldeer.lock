@@ -9,7 +9,7 @@ integrity = "3fd441e2499c5cf04ef9b4126f52150a50dcef9cac1645ff7a955345e947cd04"
 name = "kam"
 version = "v1"
 git = "https://github.com/VerisLabs/KAM.git"
-rev = "1af1eb0f9d431304877aa493d1d9f1f85f4f74bf"
+rev = "700488fea9cdce673a71993c6b3f1ce207d5548a"
 
 [[dependencies]]
 name = "minimal-smart-account"
