@@ -51,6 +51,7 @@ contract DeploySettlerScript is DeploymentManager {
         // 6. Grant roles to Settler in registry
         IkRegistry(config.kam.registry).grantRelayerRole(address(settler));
         IkRegistry(config.kam.registry).grantManagerRole(address(settler));
+        //IkRegistry(config.kam.registry).grantRoles(address(settler), 4);
 
         vm.stopBroadcast();
 
