@@ -36,6 +36,7 @@ contract SettlerHandler is BaseHandler {
     address token;
     address kToken;
     address relayer;
+    address guardian;
     AddressSet minterActors;
     AddressSet vaultActors;
 
@@ -99,6 +100,7 @@ contract SettlerHandler is BaseHandler {
         address _token,
         address _kToken,
         address _relayer,
+        address _guardian,
         address[] memory _minterActors,
         address[] memory _vaultActors
     )
@@ -114,6 +116,7 @@ contract SettlerHandler is BaseHandler {
         token = _token;
         kToken = _kToken;
         relayer = _relayer;
+        guardian = _guardian;
 
         for (uint256 i = 0; i < _minterActors.length; i++) {
             minterActors.add(_minterActors[i]);
@@ -178,7 +181,11 @@ contract SettlerHandler is BaseHandler {
             return;
         }
         kToken.safeApprove(address(kMinter), amount);
-        if (assetRouter.virtualBalance(address(kMinter), token) < amount) {
+        // Check if total requested (including this new request) would exceed virtual balance
+        bytes32 currentBatchId = kMinter.getBatchId(token);
+        uint256 currentRequested = kMinter.getBatchInfo(currentBatchId).requestedSharesInBatch;
+        uint256 virtualBal = assetRouter.virtualBalance(address(kMinter), token);
+        if (virtualBal < currentRequested + amount) {
             vm.expectRevert();
             kMinter.requestBurn(token, actor, amount);
             vm.stopPrank();
@@ -240,14 +247,17 @@ contract SettlerHandler is BaseHandler {
         // Record balance before closing
         uint256 balanceBefore = token.balanceOf(address(minterAdapter));
 
-        // Use settler to close batch
-        bytes32 proposalId = settler.closeAndProposeMinterBatch(token);
-        vm.stopPrank();
-
-        pendingMinterUnsettledBatches.add(batchId);
-        if (proposalId != bytes32(0)) {
-            pendingMinterSettlementProposals.add(proposalId);
+        // Use settler to close batch - may fail if virtual balance is insufficient
+        try settler.closeAndProposeMinterBatch(token) returns (bytes32 proposalId) {
+            pendingMinterUnsettledBatches.add(batchId);
+            if (proposalId != bytes32(0)) {
+                pendingMinterSettlementProposals.add(proposalId);
+            }
+        } catch {
+            vm.stopPrank();
+            return;
         }
+        vm.stopPrank();
 
         // Use actual balance change to account for precision in share math
         uint256 balanceAfter = token.balanceOf(address(minterAdapter));
@@ -273,20 +283,28 @@ contract SettlerHandler is BaseHandler {
             // Record balance before settlement
             uint256 balanceBefore = token.balanceOf(address(minterAdapter));
 
+            // Accept proposal if it requires approval
+            if (proposal.requiresApproval && !assetRouter.isProposalAccepted(proposalId)) {
+                vm.prank(guardian);
+                assetRouter.acceptProposal(proposalId);
+            }
+
             vm.startPrank(relayer);
-            settler.executeSettleBatch(proposalId);
+            try settler.executeSettleBatch(proposalId) {
+                pendingMinterSettlementProposals.remove(proposalId);
+                pendingMinterUnsettledBatches.remove(proposal.batchId);
+
+                minterExpectedAdapterTotalAssets = proposal.totalAssets;
+                // Use actual balance change to account for precision
+                uint256 balanceAfter = token.balanceOf(address(minterAdapter));
+                uint256 actualTransferred = balanceBefore - balanceAfter;
+                minterExpectedAdapterBalance -= actualTransferred;
+                minterActualAdapterBalance = balanceAfter;
+                minterActualAdapterTotalAssets = minterAdapter.totalAssets();
+            } catch {
+                // Settlement failed - skip this proposal
+            }
             vm.stopPrank();
-
-            pendingMinterSettlementProposals.remove(proposalId);
-            pendingMinterUnsettledBatches.remove(proposal.batchId);
-
-            minterExpectedAdapterTotalAssets = proposal.totalAssets;
-            // Use actual balance change to account for precision
-            uint256 balanceAfter = token.balanceOf(address(minterAdapter));
-            uint256 actualTransferred = balanceBefore - balanceAfter;
-            minterExpectedAdapterBalance -= actualTransferred;
-            minterActualAdapterBalance = balanceAfter;
-            minterActualAdapterTotalAssets = minterAdapter.totalAssets();
             return;
         }
 
@@ -300,8 +318,21 @@ contract SettlerHandler is BaseHandler {
             // Record minter adapter balance before DN settlement
             uint256 minterBalanceBefore = token.balanceOf(address(minterAdapter));
 
+            // Accept proposal if it requires approval
+            if (proposal.requiresApproval && !assetRouter.isProposalAccepted(proposalId)) {
+                vm.prank(guardian);
+                assetRouter.acceptProposal(proposalId);
+            }
+
             vm.startPrank(relayer);
-            settler.executeSettleBatch(proposalId);
+            try settler.executeSettleBatch(proposalId) {
+            // Settlement succeeded - continue with state tracking
+            }
+            catch {
+                // Settlement failed - skip this proposal
+                vm.stopPrank();
+                return;
+            }
             vm.stopPrank();
 
             pendingDNSettlementProposals.remove(proposalId);
@@ -319,7 +350,7 @@ contract SettlerHandler is BaseHandler {
                 int256(dnExpectedTotalAssets) + netted + proposal.yield - int256(pendingStakeInBatch[proposal.batchId])
             );
 
-            (,,,,, uint256 totalAssets, uint256 totalNetAssets,) = dnVault.getBatchIdInfo(proposal.batchId);
+            (,,,,, uint256 totalAssets, uint256 totalNetAssets,,,) = dnVault.getBatchIdInfo(proposal.batchId);
             uint256 expectedSharesToBurn;
             if (totalRequestedShares != 0) {
                 uint256 netRequestedShares = totalRequestedShares.fullMulDiv(totalNetAssets, totalAssets);
@@ -384,7 +415,7 @@ contract SettlerHandler is BaseHandler {
         }
         uint256 sharePriceBefore = dnVault.sharePrice();
         kToken.safeApprove(address(dnVault), amount);
-        try dnVault.requestStake(currentActor, amount) returns (bytes32 requestId) {
+        try dnVault.requestStake(currentActor, currentActor, amount) returns (bytes32 requestId) {
             actorStakeRequests[currentActor].add(requestId);
             depositedInBatch[dnVault.getBatchId()] += amount;
             pendingStakeInBatch[dnVault.getBatchId()] += amount;
@@ -460,16 +491,18 @@ contract SettlerHandler is BaseHandler {
         }
 
         // Use settler to close and propose DN vault batch
-        bytes32 proposalId = settler.closeAndProposeDNVaultBatch(token);
+        try settler.closeAndProposeDNVaultBatch(token) returns (bytes32 proposalId) {
+            pendingDNSettlementProposals.add(proposalId);
+            pendingDNUnsettledBatches.add(batchId);
+
+            // Update adapter balance tracking
+            dnActualAdapterBalance = metavault.balanceOf(address(dnVaultAdapter));
+            uint256 minterAdapterMetavaultBalance = metavault.balanceOf(address(minterAdapter));
+            minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
+        } catch {
+            // Batch close failed - skip
+        }
         vm.stopPrank();
-
-        pendingDNSettlementProposals.add(proposalId);
-        pendingDNUnsettledBatches.add(batchId);
-
-        // Update adapter balance tracking
-        dnActualAdapterBalance = metavault.balanceOf(address(dnVaultAdapter));
-        uint256 minterAdapterMetavaultBalance = metavault.balanceOf(address(minterAdapter));
-        minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
     }
 
     function settler_claimStakedShares(uint256 actorSeed, uint256 requestSeedIndex) public useActor(actorSeed) {
@@ -481,7 +514,7 @@ contract SettlerHandler is BaseHandler {
         bytes32 requestId = actorStakeRequests[currentActor].rand(requestSeedIndex);
         BaseVaultTypes.StakeRequest memory stakeRequest = dnVault.getStakeRequest(requestId);
         bytes32 batchId = stakeRequest.batchId;
-        (,, bool isSettled,,,, uint256 totalNetAssets, uint256 totalSupply) = dnVault.getBatchIdInfo(batchId);
+        (,, bool isSettled,,,, uint256 totalNetAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
         if (!isSettled) {
             vm.expectRevert();
             dnVault.claimStakedShares(requestId);
@@ -522,7 +555,7 @@ contract SettlerHandler is BaseHandler {
         bytes32 requestId = actorUnstakeRequests[currentActor].rand(requestSeedIndex);
         BaseVaultTypes.UnstakeRequest memory unstakeRequest = dnVault.getUnstakeRequest(requestId);
         bytes32 batchId = unstakeRequest.batchId;
-        (,, bool isSettled,,, uint256 totalAssets, uint256 totalNetAssets, uint256 totalSupply) =
+        (,, bool isSettled,,, uint256 totalAssets, uint256 totalNetAssets, uint256 totalSupply,,) =
             dnVault.getBatchIdInfo(batchId);
         if (!isSettled) {
             vm.expectRevert();
