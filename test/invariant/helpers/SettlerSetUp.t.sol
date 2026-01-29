@@ -28,6 +28,8 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
     uint16 public constant MANAGEMENT_FEE = 100; // 1%
 
     function _setUp() internal {
+        // Point to kam-v1's deployments folder which has the complete config
+        vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
         super.setUp();
     }
 
@@ -144,6 +146,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
             tokens.usdc,
             address(kUSD),
             users.relayer,
+            users.guardian,
             _minterActors,
             _vaultActors
         );
@@ -214,7 +217,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
     // Set unlimited batch limits for testing
     function _setUnlimitedBatchLimits() internal {
         vm.prank(users.admin);
-        registry.setAssetBatchLimits(tokens.usdc, type(uint128).max, type(uint128).max);
+        registry.setBatchLimits(tokens.usdc, type(uint128).max, type(uint128).max);
     }
 
     // Set max total assets for DN vault

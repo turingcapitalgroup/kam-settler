@@ -298,6 +298,15 @@ contract Settler is ISettler, OptimizedOwnableRoles {
     }
 
     /// @inheritdoc ISettler
+    /// @param _proposalId The proposal ID to execute
+    /// @dev Backend call this, and sends to forDefi for approval
+    function acceptProposal(bytes32 _proposalId) external {
+        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+
+        kAssetRouter.acceptProposal(_proposalId);
+    }
+
+    /// @inheritdoc ISettler
     /// @param _asset The asset for which to liquidate insurance shares
     /// @dev Liquidates insurance's metavault shares by calling requestRedeem + redeem
     ///      through the insurance smart account. After this, insurance will hold
