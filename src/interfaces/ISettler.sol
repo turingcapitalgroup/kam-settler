@@ -145,6 +145,11 @@ interface ISettler {
     /// @param _proposalId The proposal ID to execute
     function acceptProposal(bytes32 _proposalId) external;
 
+    /// @notice Cancels a proposal id
+    /// @dev Backend call this if forDefi transactions was aborted
+    /// @param _proposalId The proposal ID to execute
+    function cancelProposal(bytes32 _proposalId) external;
+
     /// @notice Proposes a settlement batch through the kAssetRouter
     /// @dev Proposes a settlement batch through the kAssetRouter with fee information
     /// @param _asset The asset address for the settlement
