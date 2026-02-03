@@ -2,63 +2,7 @@
 
 Batch settlement orchestration contract for the [KAM (Keyrock Asset Management)](https://github.com/turingcapitalgroup/KAM) protocol. The Settler contract manages complex batch settlement processes including rebalancing, fee calculations, asset netting, and profit distribution for delta-neutral vaults.
 
-## Overview
-
-The Settler contract acts as the orchestrator for:
-
-- **kMinter batch settlements** - Closing and settling batches from the kMinter contract
-- **Delta-Neutral (DN) vault batch settlements** - Closing batches with profit distribution and fee calculations
-- **Custodial vault settlements** - Asset transfers between custody providers and meta-vaults
-- **Insurance liquidation** - Converting insurance shares to underlying assets
-- **Profit distribution** - Distributing profits to insurance, treasury, and vault adapters
-
-## Architecture
-
-```
-src/
-├── Settler.sol                    # Main settlement contract
-├── interfaces/
-│   ├── ISettler.sol              # Interface definitions
-│   └── IRegistry.sol             # Registry interface
-└── libraries/
-    ├── VaultMathLibrary.sol      # Fee calculation logic
-    └── ExecutionDataLibrary.sol  # Execution data generation
-```
-
-### Core Components
-
-**Settler.sol** - Main contract that orchestrates:
-- Batch closing and settlement proposals
-- Asset netting between kMinter and DN vault adapters
-- Fee calculation and profit distribution
-- Transaction execution through MinimalSmartAccount adapters
-- Rebalancing operations and insurance liquidation
-
-**VaultMathLibrary.sol** - Handles fee computations:
-- Time-based management fees (prorated by seconds)
-- Performance fees with hurdle rate support
-- Hard vs. soft hurdle rate differentiation
-
-**ExecutionDataLibrary.sol** - Generates execution data for:
-- ERC20 token transfers
-- ERC7540 vault deposit/redeem operations
-
-## Settlement Flow
-
-1. **Close batch** - kMinter/vault closes pending operations
-2. **Calculate netting** - Determine difference between deposits and requests
-3. **Handle rebalancing** - Transfer shares between adapters as needed
-4. **Charge fees** - Calculate management and performance fees
-5. **Distribute profits** - Share gains with insurance, treasury, vault adapter
-6. **Propose settlement** - Create settlement proposal in asset router
-7. **Execute settlement** - Finalize the batch
-
-### Profit Distribution Priority
-
-1. **Insurance** - Receives up to its target amount (configurable basis points)
-2. **Treasury** - Receives percentage of remaining profit
-3. **Vault Adapter** - Receives configurable portion for settled vaults
-4. **kMinter** - Keeps remaining balance
+For detailed technical documentation including architecture, settlement flows, and fee models, see [docs/overview.md](docs/overview.md).
 
 ## Installation
 
