@@ -12,15 +12,15 @@ import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } fr
 import { MinimalSmartAccount } from "minimal-smart-account/MinimalSmartAccount.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
-import { DeploySettlerScript } from "script/DeploySettler.s.sol";
+import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
-import { Settler } from "src/Settler.sol";
+import { kSettler } from "src/kSettler.sol";
 
-contract SettlerTest is BaseVaultTest {
+contract kSettlerTest is BaseVaultTest {
     using SafeTransferLib for address;
     using OptimizedFixedPointMathLib for int256;
 
-    Settler public settler;
+    kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
     function setUp() public override {
@@ -34,11 +34,11 @@ contract SettlerTest is BaseVaultTest {
                 .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
-        DeploySettlerScript deployScript = new DeploySettlerScript();
-        DeploySettlerScript.SettlerDeployment memory deployment = deployScript.runTest(
+        DeploykSettlerScript deployScript = new DeploykSettlerScript();
+        DeploykSettlerScript.kSettlerDeployment memory deployment = deployScript.runTest(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
-        settler = Settler(deployment.settler);
+        settler = kSettler(deployment.settler);
 
         vm.startPrank(users.admin);
         vault = IkStakingVault(address(dnVault));

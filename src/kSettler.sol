@@ -12,17 +12,26 @@ import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Local Interfaces
 import { IRegistry } from "./interfaces/IRegistry.sol";
-import { ISettler, IVaultAdapter, IkAssetRouter, IkMinter, IkStakingVault, IkToken } from "./interfaces/ISettler.sol";
+import { IVaultAdapter, IkAssetRouter, IkMinter, IkSettler, IkStakingVault, IkToken } from "./interfaces/IkSettler.sol";
+
+// Errors
+import {
+    KSETTLER_ADDRESS_ZERO,
+    KSETTLER_BATCH_ALREADY_CLOSED,
+    KSETTLER_BATCH_ALREADY_SETTLED,
+    KSETTLER_INSUFFICIENT_BALANCE,
+    KSETTLER_INVALID_PROFIT_SHARE_BPS
+} from "./errors/Errors.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
 import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
-/// @title Settler
+/// @title kSettler
 /// @notice Contract responsible for settling batch operations in delta-neutral vaults
 /// @dev This contract handles the complex settlement process for delta-neutral vault batches,
 ///      including rebalancing, fee calculations, and asset netting operations.
 ///      It manages the interaction between kMinter, vault adapters, and meta-vaults.
-contract Settler is ISettler, OptimizedOwnableRoles {
+contract kSettler is IkSettler, OptimizedOwnableRoles {
     using VaultMathLibrary for IkStakingVault;
     using OptimizedFixedPointMathLib for int256;
     using ExecutionLib for bytes;
@@ -54,7 +63,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the Settler contract with required dependencies
+    /// @notice Initializes the kSettler contract with required dependencies
     /// @param _owner the address of the owner
     /// @param _admin the address of the admin
     /// @param _relayer the address of the relayer
@@ -82,9 +91,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                               ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc ISettler
-    /// @param _relayer The address to grant relayer role to
-    /// @dev Grants relayer role to the specified address. Only callable by admin.
+    /// @inheritdoc IkSettler
     function grantRelayerRole(address _relayer) external payable {
         hasAnyRole(msg.sender, ADMIN_ROLE);
         _grantRoles(_relayer, RELAYER_ROLE);
@@ -94,13 +101,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                             kMINTER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc ISettler
-    /// @param _asset The asset address for which to close the batch
-    /// @return _proposalId The proposal ID for the settlement, or bytes32(0) if no netting is needed
-    /// @dev Closes a kMinter batch and handles asset rebalancing. If netted assets are negative,
-    ///      requests redemption from the delta-neutral meta-vault. If positive, deposits excess
-    ///      assets to the meta-vault and creates a settlement proposal.
-    ///      Also distributes any profit to insurance and treasury before netting.
+    /// @inheritdoc IkSettler
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId) {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
@@ -109,8 +110,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         IkMinter.BatchInfo memory _batchInfo = kMinter.getBatchInfo(_batchId);
 
         // Validate batch state
-        if (_batchInfo.isClosed) revert BatchAlreadyClosed();
-        if (_batchInfo.isSettled) revert BatchAlreadySettled();
+        require(!_batchInfo.isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
+        require(!_batchInfo.isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
 
         // Close the batch in the kMinter
         kMinter.closeBatch(_batchInfo.batchId, true);
@@ -167,19 +168,12 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                             DN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc ISettler
-    /// @param _asset The asset address for which to close the batch
-    /// @return _proposalId The proposal ID for the settlement
-    /// @dev Closes a delta-neutral vault batch with default 0 profit share to vault adapter
+    /// @inheritdoc IkSettler
     function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId) {
         return _closeAndProposeDNVaultBatch(_asset, 0);
     }
 
-    /// @inheritdoc ISettler
-    /// @param _asset The asset address for which to close the batch
-    /// @param _profitShareBps Basis points of remaining profit to send to vault adapter
-    /// @return _proposalId The proposal ID for the settlement
-    /// @dev Closes a delta-neutral vault batch and initiates settlement with profit distribution.
+    /// @inheritdoc IkSettler
     function closeAndProposeDNVaultBatch(
         address _asset,
         uint16 _profitShareBps
@@ -206,7 +200,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         // Validate profit share is reasonable (max 100%)
-        if (_profitShareBps > 10_000) revert InvalidProfitShareBps();
+        require(_profitShareBps <= 10_000, KSETTLER_INVALID_PROFIT_SHARE_BPS);
 
         // Get all required addresses for the asset
         IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
@@ -220,8 +214,8 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         BatchInfo memory _batchInfo = _getBatchInfo(_vault);
 
         // Validate batch state
-        if (_batchInfo._isClosed) revert BatchAlreadyClosed();
-        if (_batchInfo._isSettled) revert BatchAlreadySettled();
+        require(!_batchInfo._isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
+        require(!_batchInfo._isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
 
         // Close the batch in the vault
         _vault.closeBatch(_batchInfo._batchId, true);
@@ -288,48 +282,38 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                             EXECUTE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc ISettler
-    /// @param _proposalId The proposal ID to execute
-    /// @dev Executes a settlement batch proposal through the kAssetRouter
+    /// @inheritdoc IkSettler
     function executeSettleBatch(bytes32 _proposalId) external payable {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         kAssetRouter.executeSettleBatch(_proposalId);
     }
 
-    /// @inheritdoc ISettler
-    /// @param _proposalId The proposal ID to execute
-    /// @dev Backend call this, and sends to forDefi for approval
+    /// @inheritdoc IkSettler
     function acceptProposal(bytes32 _proposalId) external {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         kAssetRouter.acceptProposal(_proposalId);
     }
 
-    /// @inheritdoc ISettler
-    /// @param _proposalId The proposal ID to execute
-    /// @dev Backend call this if forDefi transactions was aborted
+    /// @inheritdoc IkSettler
     function cancelProposal(bytes32 _proposalId) external {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         kAssetRouter.cancelProposal(_proposalId);
     }
 
-    /// @inheritdoc ISettler
-    /// @param _asset The asset for which to liquidate insurance shares
-    /// @dev Liquidates insurance's metavault shares by calling requestRedeem + redeem
-    ///      through the insurance smart account. After this, insurance will hold
-    ///      underlying assets instead of metavault shares.
+    /// @inheritdoc IkSettler
     function liquidateInsurance(address _asset) external payable {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
         // Get insurance address from registry
         (, address _insurance,,) = registry.getSettlementConfig();
-        if (_insurance == address(0)) revert AddressZero();
+        require(_insurance != address(0), KSETTLER_ADDRESS_ZERO);
 
         // Get the metavault target for the insurance account
         address[] memory _targets = registry.getExecutorTargets(_insurance);
-        if (_targets.length == 0) revert AddressZero();
+        require(_targets.length != 0, KSETTLER_ADDRESS_ZERO);
 
         // Find the metavault target (type METAVAULT = 0)
         address _metavaultAddr;
@@ -339,7 +323,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                 break;
             }
         }
-        if (_metavaultAddr == address(0)) revert AddressZero();
+        require(_metavaultAddr != address(0), KSETTLER_ADDRESS_ZERO);
 
         IERC7540 _metavault = IERC7540(_metavaultAddr);
 
@@ -361,15 +345,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         emit InsuranceLiquidated(_asset, _shares, _metavault.convertToAssets(_shares));
     }
 
-    /// @inheritdoc ISettler
-    /// @param _asset The asset address for the settlement
-    /// @param _vault The vault address for the settlement
-    /// @param _batchId The batch ID for the settlement
-    /// @param _totalAssets The total assets for the settlement
-    /// @param _lastFeesChargedManagement The timestamp of last management fee charge
-    /// @param _lastFeesChargedPerformance The timestamp of last performance fee charge
-    /// @return _proposalId The proposal ID for the settlement
-    /// @dev Proposes a settlement batch through the kAssetRouter with fee information
+    /// @inheritdoc IkSettler
     function proposeSettleBatch(
         address _asset,
         address _vault,
@@ -389,11 +365,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
         );
     }
 
-    /// @inheritdoc ISettler
-    /// @param _vault The vault address to close the batch for
-    /// @param _batchId The batch ID to close
-    /// @param _create Whether to create a new batch after closing
-    /// @dev Closes a vault batch through the IkStakingVault interface
+    /// @inheritdoc IkSettler
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
@@ -404,10 +376,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                         ALPHA & BETA FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc ISettler
-    /// @param _proposalId The proposal ID to finalise
-    /// @dev Finalises a custodial batch settlement by handling asset transfers between
-    ///      kMinter and vault adapters based on the netted amount in the proposal.
+    /// @inheritdoc IkSettler
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
         if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
 
@@ -443,7 +412,9 @@ contract Settler is ISettler, OptimizedOwnableRoles {
             // requestRedeem + redeem shares from metavault using kMinter adapter
             _executeAdapterCall(_kMinterAdapter, _executions);
 
-            if (IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) < _nettedAbs) revert InsufficientBalance();
+            require(
+                IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) >= _nettedAbs, KSETTLER_INSUFFICIENT_BALANCE
+            );
 
             // Transfer assets to custodial target (CEFFU)
             _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _nettedAbs);
@@ -461,10 +432,7 @@ contract Settler is ISettler, OptimizedOwnableRoles {
                               VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc ISettler
-    /// @param _proposalId The proposal ID to check
-    /// @return _isNettedNegative True if the proposal has negative netted assets, false otherwise
-    /// @dev Checks if a settlement proposal has negative netted assets
+    /// @inheritdoc IkSettler
     function isNettedNegative(bytes32 _proposalId) external view returns (bool _isNettedNegative) {
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
         if (_proposal.netted < 0) return true;

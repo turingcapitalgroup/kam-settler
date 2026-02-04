@@ -1,18 +1,18 @@
-# KAM Settler - System Overview
+# KAM kSettler - Architecture
 
 ## Introduction
 
-The Settler contract moves backend settlement math on-chain, making vault batch settlement deterministic, auditable, and trustless. Previously, settlement calculations (netting, fee computation, profit distribution) lived in off-chain services. The Settler replaces that with verifiable Solidity logic.
+The kSettler contract moves backend settlement math on-chain, making vault batch settlement deterministic, auditable, and trustless. Previously, settlement calculations (netting, fee computation, profit distribution) lived in off-chain services. The kSettler replaces that with verifiable Solidity logic.
 
-Within the KAM ecosystem, the Settler sits between the vaults (kMinter, DN vaults, Alpha/Beta vaults) and the `kAssetRouter`. It orchestrates batch closing, calculates net deposit/redemption flows, distributes profit according to a fixed priority, computes management and performance fees, and proposes settlements for execution through the router.
+Within the KAM ecosystem, the kSettler sits between the vaults (kMinter, DN vaults, Alpha/Beta vaults) and the `kAssetRouter`. It orchestrates batch closing, calculates net deposit/redemption flows, distributes profit according to a fixed priority, computes management and performance fees, and proposes settlements for execution through the router.
 
-The contract is non-upgradeable. All transactions sent to the Settler are triggered on-chain by a ForDefi MPC wallet acting as the relayer, which drives the settlement lifecycle by calling the Settler's public functions in sequence.
+The contract is non-upgradeable. All transactions sent to the kSettler are triggered on-chain by a ForDefi MPC wallet acting as the relayer, which drives the settlement lifecycle by calling the kSettler's public functions in sequence.
 
 ---
 
 ## File-by-File Breakdown
 
-### `src/Settler.sol`
+### `src/kSettler.sol`
 Core orchestration contract. Inherits `OptimizedOwnableRoles` (Solady) for gas-efficient role management. Contains all settlement logic:
 - **kMinter batch**: `closeAndProposeMinterBatch` closes the kMinter batch, calculates netting (deposited - requested), rebalances with the MetaWallet (deposit or requestRedeem+redeem), and proposes settlement.
 - **DN vault batch**: `_closeAndProposeDNVaultBatch` closes the DN vault batch, computes depeg (profit/loss), distributes profit (insurance -> treasury -> vault adapter), calculates fees, executes netting transfers between adapters, and proposes settlement.
@@ -22,9 +22,8 @@ Core orchestration contract. Inherits `OptimizedOwnableRoles` (Solady) for gas-e
 - **Fees**: `_fees` / `_calculateFees` compute management and performance fees, `_executeFeeTransfer` sends fee shares to treasury.
 - **Profit distribution**: `_distributeProfitShares` implements the insurance -> treasury -> vault adapter priority.
 
-### `src/interfaces/ISettler.sol`
-Public interface defining all external functions, events, errors, and structs:
-- **Errors**: `BatchAlreadyClosed`, `BatchAlreadySettled`, `AddressZero`, `InsufficientBalance`, `InvalidProfitShareBps`, `NettedAssetsPositive`
+### `src/interfaces/IkSettler.sol`
+Public interface defining all external functions, events, and structs. Error constants are centralized in `src/errors/Errors.sol` using the `KS*` prefix pattern.
 - **Events**: `ProfitDistributed(insuranceShares, treasuryShares, vaultAdapterShares)`, `InsuranceLiquidated(asset, shares, assets)`
 - **Structs**: `BatchInfo` (batch state), `VaultAddresses` (address bundle), `AssetData` (settlement calculations)
 
@@ -43,11 +42,11 @@ Pure library generating `Execution[]` calldata for `MinimalSmartAccount.execute(
 - `getRedeemExecutionData` -- ERC7540 `redeem`
 - `getDepositExecutionData` -- ERC7540 `requestDeposit` + `deposit` (two executions)
 
-### `script/DeploySettler.s.sol`
-Deployment script using `DeploymentManager` base. Reads network config from JSON, fetches `kMinter` and `kAssetRouter` from the registry, deploys `Settler`, and grants it `RELAYER_ROLE` and `MANAGER_ROLE` in the registry. Outputs deployed address to JSON.
+### `script/DeploykSettler.s.sol`
+Deployment script using `DeploymentManager` base. Reads network config from JSON, fetches `kMinter` and `kAssetRouter` from the registry, deploys `kSettler`, and grants it `RELAYER_ROLE` and `MANAGER_ROLE` in the registry. Outputs deployed address to JSON.
 
 ### `script/GrantRelayerRole.s.sol`
-Post-deployment role management. Reads the deployed Settler address from JSON output, then calls `settler.grantRelayerRole(newRelayer)` via the admin account.
+Post-deployment role management. Reads the deployed kSettler address from JSON output, then calls `settler.grantRelayerRole(newRelayer)` via the admin account.
 
 ---
 
@@ -210,7 +209,7 @@ Insurance and treasury addresses and basis points are read from the registry via
 
 ## Fee Model
 
-Fees are calculated in `VaultMathLibrary` and charged during DN vault batch settlement (`_fees` in `Settler.sol`).
+Fees are calculated in `VaultMathLibrary` and charged during DN vault batch settlement (`_fees` in `kSettler.sol`).
 
 **Management Fee**: Time-based, prorated per second. Formula:
 ```
@@ -226,31 +225,3 @@ Uses `sharePriceWatermark` to track the high-water mark -- prevents charging per
 
 **Fee transfer**: Fee shares are calculated as vault shares (not MetaWallet shares). They are transferred as MetaWallet shares from the DN vault adapter to the treasury address.
 
----
-
-## Honest Assessment
-
-### Strengths
-- **On-chain determinism**: All settlement math is verifiable on-chain. No off-chain black box for netting, fee calculation, or profit distribution.
-- **Clear separation of concerns**: Settler handles orchestration, `VaultMathLibrary` handles fee math, `ExecutionDataLibrary` handles calldata encoding. Each has a single responsibility.
-- **Gas efficiency**: Uses Solady's `OptimizedOwnableRoles` and `OptimizedFixedPointMathLib`. Role checks use bitmask operations. No storage bloat.
-- **Production-grade role system**: Three-tier access (owner, admin, relayer) with explicit `RELAYER_ROLE` checks on every mutative function.
-- **Comprehensive test suite**: The project includes invariant tests validating settlement math invariants.
-
-### Considerations and Risks
-
-- **Relayer trust assumptions**: The relayer (a ForDefi MPC wallet) controls batch closing timing and proposal creation. A compromised relayer could manipulate settlement timing (e.g., closing batches at favorable/unfavorable share prices). The MPC setup reduces single-key risk, but the relayer remains a centralized trust point in the settlement lifecycle.
-
-- **No explicit reentrancy guards**: The contract relies on the CEI pattern and the adapter execution model (calls go through `MinimalSmartAccount.execute`) rather than explicit `nonReentrant` modifiers. This is a deliberate design choice but requires careful reasoning about all external call paths.
-
-- **External state dependency**: Fee calculations depend on vault state (`sharePriceWatermark`, `totalAssets`, `totalSupply`, `managementFee`, `hurdleRate`) read from external contracts. If any of these return manipulated values (oracle risk, compromised vault), fee calculations will be incorrect.
-
-- **Dust adjustment loop**: The pattern `while (convertToAssets(shares) < desired) shares++` appears in multiple places (`closeAndProposeMinterBatch:138`, `_closeAndProposeDNVaultBatch:261`, `_distributeProfitShares:838`). These loops are bounded in practice (share-to-asset rounding is typically off by 1-2 wei) but have no explicit iteration cap. In edge cases with extreme share price ratios, gas cost could spike.
-
-- **`profitShareBps` as a call parameter**: The profit share percentage is passed per call rather than stored on-chain. The relayer could theoretically vary it between settlements. This is mitigated by access control and off-chain monitoring, but it is a trust surface worth noting.
-
-- **Virtual vs. physical state gap**: Settlement is bookkeeping-only -- it updates virtual accounting in `kAssetRouter`. Actual fund movement (e.g., moving assets to/from CEFFU in Alpha/Beta) happens in a separate step (`finaliseCustodialSettlement`). This temporal gap between virtual and physical state is by design but requires operational discipline to keep in sync.
-
-- **Non-upgradeable**: The Settler has no proxy or upgrade mechanism. Any bug or logic change requires deploying a new contract and re-granting all roles across the ecosystem (registry relayer/manager roles, adapter permissions). This is a security strength (no upgrade risk) but an operational consideration.
-
-- **`Unauthorized` error vs. role check pattern**: The contract uses `hasAnyRole` in two different patterns -- as a revert-on-false check (`if (!hasAnyRole(...)) revert Unauthorized()`) and as a bare call (`hasAnyRole(msg.sender, ADMIN_ROLE)` in `grantRelayerRole` at line 89). The bare call pattern in `grantRelayerRole` relies on Solady's `hasAnyRole` reverting internally on failure, which is correct but stylistically inconsistent with the rest of the contract.
