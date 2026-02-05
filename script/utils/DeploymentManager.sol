@@ -15,7 +15,7 @@ abstract contract DeploymentManager is Script {
                             DATA STRUCTURES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Role addresses for the Settler contract
+    /// @notice Role addresses for the kSettler contract
     struct RoleAddresses {
         address owner;
         address admin;

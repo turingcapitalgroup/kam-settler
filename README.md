@@ -1,8 +1,8 @@
-# KAM Settler
+# KAM kSettler
 
-Batch settlement orchestration contract for the [KAM (Keyrock Asset Management)](https://github.com/turingcapitalgroup/KAM) protocol. The Settler contract manages complex batch settlement processes including rebalancing, fee calculations, asset netting, and profit distribution for delta-neutral vaults.
+Batch settlement orchestration contract for the [KAM (Keyrock Asset Management)](https://github.com/turingcapitalgroup/KAM) protocol. The kSettler contract manages complex batch settlement processes including rebalancing, fee calculations, asset netting, and profit distribution for delta-neutral vaults.
 
-For detailed technical documentation including architecture, settlement flows, and fee models, see [docs/overview.md](docs/overview.md).
+For detailed technical documentation including architecture, settlement flows, and fee models, see [docs/architecture.md](docs/architecture.md).
 
 ## Installation
 
@@ -80,10 +80,10 @@ make deploy-mainnet-dry-run    # Simulate without broadcasting
 make deploy-sepolia
 make deploy-sepolia-dry-run
 
-# Localhost (full stack: KAM + Settler)
+# Localhost (full stack: KAM + kSettler)
 make deploy-localhost
 
-# Localhost (Settler only, requires existing KAM deployment)
+# Localhost (kSettler only, requires existing KAM deployment)
 make deploy-settler-localhost
 ```
 
