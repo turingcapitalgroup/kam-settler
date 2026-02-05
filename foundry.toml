@@ -43,6 +43,10 @@ lint_on_build = false
 mainnet = "${RPC_MAINNET}"
 sepolia = "${RPC_SEPOLIA}"
 
+[etherscan]
+mainnet = { key = "${ETHERSCAN_MAINNET_KEY}" }
+sepolia = { key = "${ETHERSCAN_SEPOLIA_KEY}" }
+
 [soldeer]
 # whether soldeer manages remappings
 remappings_generated = false

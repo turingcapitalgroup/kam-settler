@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { SettlerHandler } from "../handlers/SettlerHandler.t.sol";
+import { kSettlerHandler } from "../handlers/kSettlerHandler.t.sol";
 
 import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { console2 } from "forge-std/console2.sol";
@@ -14,14 +14,14 @@ import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
-import { DeploySettlerScript } from "script/DeploySettler.s.sol";
-import { Settler } from "src/Settler.sol";
+import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
+import { kSettler } from "src/kSettler.sol";
 
-abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
+abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
     using SafeTransferLib for address;
 
-    SettlerHandler public settlerHandler;
-    Settler public settler;
+    kSettlerHandler public settlerHandler;
+    kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
     uint16 public constant PERFORMANCE_FEE = 2000; // 20%
@@ -42,12 +42,12 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
                 .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
-        // Deploy Settler using the deployment script
-        DeploySettlerScript deployScript = new DeploySettlerScript();
-        DeploySettlerScript.SettlerDeployment memory deployment = deployScript.runTest(
+        // Deploy kSettler using the deployment script
+        DeploykSettlerScript deployScript = new DeploykSettlerScript();
+        DeploykSettlerScript.kSettlerDeployment memory deployment = deployScript.runTest(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
-        settler = Settler(deployment.settler);
+        settler = kSettler(deployment.settler);
 
         // Grant roles to settler for adapter operations
         vm.prank(users.owner);
@@ -135,7 +135,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
         address[] memory _minterActors = _getMinterActors();
         address[] memory _vaultActors = _getVaultActors();
 
-        settlerHandler = new SettlerHandler(
+        settlerHandler = new kSettlerHandler(
             address(settler),
             address(minter),
             address(dnVault),
@@ -154,7 +154,7 @@ abstract contract SettlerSetUp is StdInvariant, DeploymentBaseTest {
         targetContract(address(settlerHandler));
         bytes4[] memory selectors = settlerHandler.getEntryPoints();
         targetSelector(FuzzSelector({ addr: address(settlerHandler), selectors: selectors }));
-        vm.label(address(settlerHandler), "SettlerHandler");
+        vm.label(address(settlerHandler), "kSettlerHandler");
     }
 
     function _setUpVaultFees(IkStakingVault vault) internal {

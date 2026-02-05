@@ -14,9 +14,9 @@ import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkMinter } from "kam/src/interfaces/IkMinter.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { BaseVaultTypes } from "kam/src/kStakingVault/types/BaseVaultTypes.sol";
-import { Settler } from "src/Settler.sol";
+import { kSettler } from "src/kSettler.sol";
 
-contract SettlerHandler is BaseHandler {
+contract kSettlerHandler is BaseHandler {
     using OptimizedFixedPointMathLib for int256;
     using OptimizedFixedPointMathLib for uint256;
     using SafeTransferLib for address;
@@ -24,7 +24,7 @@ contract SettlerHandler is BaseHandler {
     using LibAddressSet for AddressSet;
 
     // Core contracts
-    Settler settler;
+    kSettler settler;
     IkMinter kMinter;
     IkStakingVault dnVault;
     IkAssetRouter assetRouter;
@@ -106,7 +106,7 @@ contract SettlerHandler is BaseHandler {
     )
         BaseHandler(_vaultActors)
     {
-        settler = Settler(_settler);
+        settler = kSettler(_settler);
         kMinter = IkMinter(_kMinter);
         dnVault = IkStakingVault(_dnVault);
         assetRouter = IkAssetRouter(_assetRouter);
@@ -448,7 +448,7 @@ contract SettlerHandler is BaseHandler {
         }
         uint256 sharePriceBefore = dnVault.sharePrice();
         requestedInBatch[dnVault.getBatchId()] += amount;
-        bytes32 requestId = dnVault.requestUnstake(currentActor, amount);
+        bytes32 requestId = dnVault.requestUnstake(currentActor, currentActor, amount);
         actorUnstakeRequests[currentActor].add(requestId);
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);

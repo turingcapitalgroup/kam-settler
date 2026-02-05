@@ -11,9 +11,9 @@ import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
-import { DeploySettlerScript } from "script/DeploySettler.s.sol";
-import { Settler } from "src/Settler.sol";
-import { ISettler, IkAssetRouter } from "src/interfaces/ISettler.sol";
+import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
+import { IkAssetRouter, IkSettler } from "src/interfaces/IkSettler.sol";
+import { kSettler } from "src/kSettler.sol";
 
 /// @title CustodialVaultTest
 /// @notice Tests for alpha and beta vault (custodial) settlement flows
@@ -22,7 +22,7 @@ import { ISettler, IkAssetRouter } from "src/interfaces/ISettler.sol";
 contract CustodialVaultTest is BaseVaultTest {
     using SafeTransferLib for address;
 
-    Settler public settler;
+    kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
     function setUp() public override {
@@ -37,12 +37,12 @@ contract CustodialVaultTest is BaseVaultTest {
                 .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, approveSelector)
         );
 
-        // Deploy Settler using the deployment script
-        DeploySettlerScript deployScript = new DeploySettlerScript();
-        DeploySettlerScript.SettlerDeployment memory deployment = deployScript.runTest(
+        // Deploy kSettler using the deployment script
+        DeploykSettlerScript deployScript = new DeploykSettlerScript();
+        DeploykSettlerScript.kSettlerDeployment memory deployment = deployScript.runTest(
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
-        settler = Settler(deployment.settler);
+        settler = kSettler(deployment.settler);
 
         vm.startPrank(users.admin);
         vault = IkStakingVault(address(alphaVault));
@@ -246,7 +246,7 @@ contract CustodialVaultTest is BaseVaultTest {
         // Now request unstake (creates negative netting scenario)
         uint256 aliceShares = alphaVault.balanceOf(users.alice);
         vm.prank(users.alice);
-        bytes32 unstakeRequestId = alphaVault.requestUnstake(users.alice, aliceShares);
+        bytes32 unstakeRequestId = alphaVault.requestUnstake(users.alice, users.alice, aliceShares);
 
         // Close and settle second batch with redemption
         (bytes32 batchId2,,,) = alphaVault.getCurrentBatchInfo();

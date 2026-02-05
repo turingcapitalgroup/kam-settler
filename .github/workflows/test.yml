@@ -30,6 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           forge soldeer install
+          cd dependencies/kam-v1 && forge soldeer install
 
       - name: Run Forge fmt
         run: |

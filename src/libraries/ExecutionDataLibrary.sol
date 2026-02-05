@@ -5,149 +5,131 @@ import { IERC20 } from "forge-std/interfaces/IERC20.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { Execution } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
-/**
- * @title ExecutionDataLibrary
- * @notice Library containing execution data generation functions for various token operations
- * @dev This library provides pure functions to generate Execution arrays for token transfers,
- *      redeem requests, and other operations that can be executed through vault adapters using
- *      the MinimalSmartAccount interface.
- */
+/// @title ExecutionDataLibrary
+/// @notice Pure functions for generating Execution arrays for token operations
+/// @dev Generates calldata for ERC20 transfers, ERC7540 deposits and redemptions
+///      executed through vault adapters via the MinimalSmartAccount interface.
 library ExecutionDataLibrary {
-    /**
-     * @notice Generates execution data for a standard ERC20 transfer operation
-     * @dev Creates a single Execution struct for executing a transfer
-     * @param target The address of the token contract to transfer from
-     * @param to The address to transfer tokens to
-     * @param amount The amount of tokens to transfer
-     * @return executions Array containing a single Execution struct
-     */
+    /// @notice Generates execution data for a standard ERC20 transfer
+    /// @param _target The token contract address
+    /// @param _to The recipient address
+    /// @param _amount The amount to transfer
+    /// @return _executions Array containing a single transfer Execution
     function getTransferExecutionData(
-        address target,
-        address to,
-        uint256 amount
+        address _target,
+        address _to,
+        uint256 _amount
     )
         internal
         pure
-        returns (Execution[] memory executions)
+        returns (Execution[] memory _executions)
     {
-        executions = new Execution[](1);
-        executions[0] = Execution({
-            target: target, value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, to, amount)
+        _executions = new Execution[](1);
+        _executions[0] = Execution({
+            target: _target, value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, _to, _amount)
         });
     }
 
-    /**
-     * @notice Generates execution data for a standard ERC20 transferFrom operation
-     * @dev Creates a single Execution struct for executing a transferFrom
-     * @param target The address of the token contract to transfer from
-     * @param from The address to transfer tokens from
-     * @param to The address to transfer tokens to
-     * @param amount The amount of tokens to transfer
-     * @return executions Array containing a single Execution struct
-     */
+    /// @notice Generates execution data for a standard ERC20 transferFrom
+    /// @param _target The token contract address
+    /// @param _from The address to transfer from
+    /// @param _to The recipient address
+    /// @param _amount The amount to transfer
+    /// @return _executions Array containing a single transferFrom Execution
     function getTransferFromExecutionData(
-        address target,
-        address from,
-        address to,
-        uint256 amount
+        address _target,
+        address _from,
+        address _to,
+        uint256 _amount
     )
         internal
         pure
-        returns (Execution[] memory executions)
+        returns (Execution[] memory _executions)
     {
-        executions = new Execution[](1);
-        executions[0] = Execution({
-            target: target, value: 0, callData: abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
+        _executions = new Execution[](1);
+        _executions[0] = Execution({
+            target: _target,
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transferFrom.selector, _from, _to, _amount)
         });
     }
 
-    /**
-     * @notice Generates execution data for an ERC7540 requestRedeem operation
-     * @dev Creates a single Execution struct for executing a redeem request
-     * @param target The address of the ERC7540 vault contract
-     * @param controller The address of the controller for the redeem request
-     * @param owner The address of the owner of the shares to be redeemed
-     * @param shares The amount of shares to request for redemption
-     * @return executions Array containing a single Execution struct
-     */
+    /// @notice Generates execution data for an ERC7540 requestRedeem
+    /// @param _target The ERC7540 vault contract address
+    /// @param _controller The controller for the redeem request
+    /// @param _owner The owner of the shares to redeem
+    /// @param _shares The amount of shares to request for redemption
+    /// @return _executions Array containing a single requestRedeem Execution
     function getRequestRedeemExecutionData(
-        address target,
-        address controller,
-        address owner,
-        uint256 shares
+        address _target,
+        address _controller,
+        address _owner,
+        uint256 _shares
     )
         internal
         pure
-        returns (Execution[] memory executions)
+        returns (Execution[] memory _executions)
     {
-        executions = new Execution[](1);
-        executions[0] = Execution({
-            target: target,
+        _executions = new Execution[](1);
+        _executions[0] = Execution({
+            target: _target,
             value: 0,
-            callData: abi.encodeWithSelector(IERC7540.requestRedeem.selector, shares, controller, owner)
+            callData: abi.encodeWithSelector(IERC7540.requestRedeem.selector, _shares, _controller, _owner)
         });
     }
 
-    /**
-     * @notice Generates execution data for an ERC7540 redeem operation
-     * @dev Creates a single Execution struct for executing a redeem
-     * @param target The address of the ERC7540 vault contract
-     * @param receiver The address that will receive the assets
-     * @param controller The address of the controller
-     * @param shares The amount of shares to redeem
-     * @return executions Array containing a single Execution struct
-     */
+    /// @notice Generates execution data for an ERC7540 redeem
+    /// @param _target The ERC7540 vault contract address
+    /// @param _receiver The address that will receive the assets
+    /// @param _controller The controller address
+    /// @param _shares The amount of shares to redeem
+    /// @return _executions Array containing a single redeem Execution
     function getRedeemExecutionData(
-        address target,
-        address receiver,
-        address controller,
-        uint256 shares
+        address _target,
+        address _receiver,
+        address _controller,
+        uint256 _shares
     )
         internal
         pure
-        returns (Execution[] memory executions)
+        returns (Execution[] memory _executions)
     {
-        executions = new Execution[](1);
-        executions[0] = Execution({
-            target: target,
+        _executions = new Execution[](1);
+        _executions[0] = Execution({
+            target: _target,
             value: 0,
-            callData: abi.encodeWithSelector(IERC7540.redeem.selector, shares, receiver, controller)
+            callData: abi.encodeWithSelector(IERC7540.redeem.selector, _shares, _receiver, _controller)
         });
     }
 
-    /**
-     * @notice Generates execution data for an ERC7540 deposit operation
-     * @dev Creates two Execution structs: one for requestDeposit and one for deposit
-     * @param target The address of the ERC7540 vault contract
-     * @param receiver The address that will receive the shares
-     * @param controller The address of the controller
-     * @param assets The amount of assets to deposit
-     * @return executions Array containing two Execution structs for requestDeposit and deposit
-     */
+    /// @notice Generates execution data for an ERC7540 deposit (requestDeposit + deposit)
+    /// @param _target The ERC7540 vault contract address
+    /// @param _receiver The address that will receive the shares
+    /// @param _controller The controller address
+    /// @param _assets The amount of assets to deposit
+    /// @return _executions Array containing two Execution structs for requestDeposit and deposit
     function getDepositExecutionData(
-        address target,
-        address receiver,
-        address controller,
-        uint256 assets
+        address _target,
+        address _receiver,
+        address _controller,
+        uint256 _assets
     )
         internal
         pure
-        returns (Execution[] memory executions)
+        returns (Execution[] memory _executions)
     {
-        executions = new Execution[](2);
+        _executions = new Execution[](2);
 
-        // First execution: requestDeposit
-        executions[0] = Execution({
-            target: target,
+        _executions[0] = Execution({
+            target: _target,
             value: 0,
-            callData: abi.encodeWithSelector(IERC7540.requestDeposit.selector, assets, controller, receiver)
+            callData: abi.encodeWithSelector(IERC7540.requestDeposit.selector, _assets, _controller, _receiver)
         });
 
-        // Second execution: deposit
-        executions[1] = Execution({
-            target: target,
+        _executions[1] = Execution({
+            target: _target,
             value: 0,
-            callData: abi.encodeWithSignature("deposit(uint256,address,address)", assets, receiver, controller)
+            callData: abi.encodeWithSignature("deposit(uint256,address,address)", _assets, _receiver, _controller)
         });
     }
 }

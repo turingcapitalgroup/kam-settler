@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { SettlerSetUp } from "./helpers/SettlerSetUp.t.sol";
+import { kSettlerSetUp } from "./helpers/kSettlerSetUp.t.sol";
 
-contract SettlerInvariants is SettlerSetUp {
+contract kSettlerInvariants is kSettlerSetUp {
     function setUp() public override {
         _setUp();
         _setUpSettler();

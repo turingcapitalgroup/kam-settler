@@ -4,6 +4,10 @@ pragma solidity 0.8.30;
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 
+/// @title VaultMathLibrary
+/// @notice Fee calculation math for kSettler vault batch settlements
+/// @dev Uses Solady OptimizedFixedPointMathLib for precision-safe fixed-point arithmetic.
+///      Computes management fees (time-prorated) and performance fees (hurdle-aware).
 library VaultMathLibrary {
     using OptimizedFixedPointMathLib for uint256;
 
@@ -13,6 +17,13 @@ library VaultMathLibrary {
     /// @notice Number of seconds in a year
     uint256 constant SECS_PER_YEAR = 31_556_952;
 
+    /// @notice Computes management and performance fees for the last batch
+    /// @param vault The staking vault to compute fees for
+    /// @param _totalAssets Current total assets in the vault
+    /// @param _totalSupply Current total supply of vault shares
+    /// @return managementFees Management fee shares to charge
+    /// @return performanceFees Performance fee shares to charge
+    /// @return totalFees Total fee shares (management + performance)
     function computeLastBatchFeesWithAssetsAndSupply(
         IkStakingVault vault,
         uint256 _totalAssets,

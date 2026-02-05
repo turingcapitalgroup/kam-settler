@@ -1,35 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
+import { IkToken } from "kToken0/interfaces/IkToken.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkMinter } from "kam/src/interfaces/IkMinter.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
-import { IkToken } from "kam/src/interfaces/IkToken.sol";
 
-interface ISettler {
-    /*//////////////////////////////////////////////////////////////
-                              ERRORS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Thrown when attempting to close a batch that is already closed
-    error BatchAlreadyClosed();
-
-    /// @notice Thrown when attempting to settle a batch that is already settled
-    error BatchAlreadySettled();
-
-    /// @notice Thrown when a required address is zero
-    error AddressZero();
-
-    /// @notice Thrown when netted assets are positive
-    error NettedAssetsPositive();
-
-    /// @notice Thrown when the balance of the kAssetRouter is insufficient
-    error InsufficientBalance();
-
-    /// @notice Thrown when the profit share basis points exceeds 10000
-    error InvalidProfitShareBps();
-
+interface IkSettler {
     /*//////////////////////////////////////////////////////////////
                               EVENTS
     //////////////////////////////////////////////////////////////*/
