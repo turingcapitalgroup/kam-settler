@@ -246,7 +246,7 @@ contract CustodialVaultTest is BaseVaultTest {
         // Now request unstake (creates negative netting scenario)
         uint256 aliceShares = alphaVault.balanceOf(users.alice);
         vm.prank(users.alice);
-        bytes32 unstakeRequestId = alphaVault.requestUnstake(users.alice, aliceShares);
+        bytes32 unstakeRequestId = alphaVault.requestUnstake(users.alice, users.alice, aliceShares);
 
         // Close and settle second batch with redemption
         (bytes32 batchId2,,,) = alphaVault.getCurrentBatchInfo();

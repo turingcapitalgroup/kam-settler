@@ -448,7 +448,7 @@ contract kSettlerHandler is BaseHandler {
         }
         uint256 sharePriceBefore = dnVault.sharePrice();
         requestedInBatch[dnVault.getBatchId()] += amount;
-        bytes32 requestId = dnVault.requestUnstake(currentActor, amount);
+        bytes32 requestId = dnVault.requestUnstake(currentActor, currentActor, amount);
         actorUnstakeRequests[currentActor].add(requestId);
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);

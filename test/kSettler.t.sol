@@ -222,7 +222,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.prank(users.alice);
-        requestId = vault.requestUnstake(users.alice, requestAmount);
+        requestId = vault.requestUnstake(users.alice, users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
         assetRouter.executeSettleBatch(proposalId);
@@ -254,7 +254,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.prank(users.alice);
-        requestId = vault.requestUnstake(users.alice, requestAmount);
+        requestId = vault.requestUnstake(users.alice, users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
