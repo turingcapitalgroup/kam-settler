@@ -657,7 +657,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
     {
         // Calculate fees and get timestamps
         uint256 _feeShares;
-        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) = _calculateFees(_vault);
+        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) = _calculateFees(_vault, _dnMetaVault);
 
         // If there are fees to charge, execute the transfer
         if (_feeShares > 0) {
@@ -668,10 +668,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
     /// @notice Calculates management and performance fees for the vault
     /// @dev Determines if fees are due and calculates the total fee shares
     /// @param _vault Address of the vault to calculate fees for
+    /// @param _dnMetaVault Address of the metavault
     /// @return _feeShares Total number of fee shares to charge
     /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _calculateFees(IkStakingVault _vault)
+    function _calculateFees(IkStakingVault _vault, IERC7540 _dnMetaVault)
         internal
         view
         returns (uint256 _feeShares, uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
@@ -686,17 +687,20 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         (uint256 _managementFee, uint256 _performanceFee,) =
             _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply());
 
+        uint256 feeAssets;
         // Check if management fee is due
         if (zeroFloorSub(block.timestamp, _managementFeeTimestamp) > 0) {
-            _feeShares += _managementFee;
+            feeAssets += _managementFee;
             _lastFeesChargedDateManagement = uint64(block.timestamp);
         }
 
         // Check if performance fee is due
         if (zeroFloorSub(block.timestamp, _performanceFeeTimestamp) > 0) {
-            _feeShares += _performanceFee;
+            feeAssets += _performanceFee;
             _lastFeesChargedDatePerformance = uint64(block.timestamp);
         }
+
+        _feeShares = _dnMetaVault.convertToShares(feeAssets);
     }
 
     /// @notice Executes the transfer of fee shares to the treasury
