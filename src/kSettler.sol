@@ -93,7 +93,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function grantRelayerRole(address _relayer) external payable {
-        hasAnyRole(msg.sender, ADMIN_ROLE);
+        _checkRoles(ADMIN_ROLE);
         _grantRoles(_relayer, RELAYER_ROLE);
     }
 
@@ -103,7 +103,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId) {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         // Retrieve current batch information
         bytes32 _batchId = kMinter.getBatchId(_asset);
@@ -197,7 +197,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         returns (bytes32 _proposalId)
     {
         // Ensure only authorized relayers can call this function
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         // Validate profit share is reasonable (max 100%)
         require(_profitShareBps <= 10_000, KSETTLER_INVALID_PROFIT_SHARE_BPS);
@@ -284,28 +284,28 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function executeSettleBatch(bytes32 _proposalId) external payable {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         kAssetRouter.executeSettleBatch(_proposalId);
     }
 
     /// @inheritdoc IkSettler
     function acceptProposal(bytes32 _proposalId) external {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         kAssetRouter.acceptProposal(_proposalId);
     }
 
     /// @inheritdoc IkSettler
     function cancelProposal(bytes32 _proposalId) external {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         kAssetRouter.cancelProposal(_proposalId);
     }
 
     /// @inheritdoc IkSettler
     function liquidateInsurance(address _asset) external payable {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         // Get insurance address from registry
         (, address _insurance,,) = registry.getSettlementConfig();
@@ -358,7 +358,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         payable
         returns (bytes32 _proposalId)
     {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         _proposalId = kAssetRouter.proposeSettleBatch(
             _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
@@ -367,7 +367,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         IkStakingVault(_vault).closeBatch(_batchId, _create);
     }
@@ -378,7 +378,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
-        if (!hasAnyRole(msg.sender, RELAYER_ROLE)) revert Unauthorized();
+        _checkRoles(RELAYER_ROLE);
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
 
