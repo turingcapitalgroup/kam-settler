@@ -32,7 +32,7 @@ Pure math library for fee calculations using Solady's `OptimizedFixedPointMathLi
 - **Management fee**: `(totalAssets * duration * managementFeeBps) / (SECS_PER_YEAR * MAX_BPS)` -- time-prorated per second
 - **Performance fee**: Only charged when `assetsDelta > 0` (profit exists) and `totalReturn > hurdleReturn`. Supports hard hurdle (fees on excess only) and soft hurdle (fees on total return if above hurdle). Uses `sharePriceWatermark` to prevent fee reset gaming.
 
-> **Note**: In the Solidity code, the MetaWallet is referenced via the variable `_metavault` typed as `IERC7540`. The product name is MetaWallet; the code name is `metavault`.
+> **Note**: In the Solidity code, the MetaWallet is referenced via the variable `_metavault` typed as `IERC7540`.
 
 ### `src/libraries/ExecutionDataLibrary.sol`
 Pure library generating `Execution[]` calldata for `MinimalSmartAccount.execute()`:

@@ -60,7 +60,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         vm.prank(users.admin);
         paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
 
-        // Set up approvals for minter adapter to interact with metavault
+        // Set up approvals for minter adapter to interact with metawallet
         _setupMinterAdapterApprovals();
     }
 
@@ -101,7 +101,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         ModeCode mode2 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode2, executionCalldata2);
 
-        // Initial deposit to metavault
+        // Initial deposit to metawallet
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         deal(tokens.usdc, address(erc7540USDC), 0);
 

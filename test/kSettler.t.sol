@@ -669,7 +669,7 @@ contract kSettlerTest is BaseVaultTest {
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
-        // Mint profit to metavault
+        // Mint profit to metawallet
         (bool success,) =
             tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
         require(success);
@@ -743,14 +743,14 @@ contract kSettlerTest is BaseVaultTest {
 
         vm.startPrank(users.admin);
 
-        // Set up insurance executor permissions for metavault operations
+        // Set up insurance executor permissions for metawallet operations
         bytes4 requestRedeemSelector = IERC7540.requestRedeem.selector;
         bytes4 redeemSelector = IERC7540.redeem.selector;
 
         // Cast registry to IExecutionGuardian to access setAllowedSelector
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
 
-        // Allow insurance to call requestRedeem and redeem on the metavault (targetType = 0 for METAVAULT)
+        // Allow insurance to call requestRedeem and redeem on the metawallet (targetType = 0 for METAVAULT)
         guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, requestRedeemSelector, true);
         guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, redeemSelector, true);
 

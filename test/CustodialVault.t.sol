@@ -75,11 +75,11 @@ contract CustodialVaultTest is BaseVaultTest {
         paramChecker.setAllowedReceiver(address(erc7540USDC), address(wallet), true);
         vm.stopPrank();
 
-        // Setup initial deposits to metavault for kMinter adapter
+        // Setup initial deposits to metawallet for kMinter adapter
         _setupMinterAdapterDeposits();
     }
 
-    /// @notice Setup initial deposits to metavault for kMinter adapter
+    /// @notice Setup initial deposits to metawallet for kMinter adapter
     function _setupMinterAdapterDeposits() internal {
         vm.startPrank(users.relayer);
 

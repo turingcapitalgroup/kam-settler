@@ -262,10 +262,10 @@ contract kSettlerHandler is BaseHandler {
         // Use actual balance change to account for precision in share math
         uint256 balanceAfter = token.balanceOf(address(minterAdapter));
         if (balanceBefore > balanceAfter) {
-            // Positive netting case: tokens deposited to metavault
+            // Positive netting case: tokens deposited to metawallet
             minterExpectedAdapterBalance -= (balanceBefore - balanceAfter);
         } else if (balanceAfter > balanceBefore) {
-            // Negative netting case: tokens redeemed from metavault (sync settlement)
+            // Negative netting case: tokens redeemed from metawallet (sync settlement)
             minterExpectedAdapterBalance += (balanceAfter - balanceBefore);
         }
 
@@ -595,7 +595,7 @@ contract kSettlerHandler is BaseHandler {
     function settler_gain(uint256 amount) public {
         amount = bound(amount, 0, dnActualTotalAssets);
         if (amount == 0) return;
-        // Simulate yield in metavault
+        // Simulate yield in metawallet
         uint256 newBalance = token.balanceOf(address(metavault)) + amount;
         deal(token, address(metavault), newBalance);
         totalYieldInBatch[dnVault.getBatchId()] += int256(amount);

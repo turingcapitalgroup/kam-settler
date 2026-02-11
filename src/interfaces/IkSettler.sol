@@ -102,7 +102,7 @@ interface IkSettler {
 
     /// @notice Closes a kMinter batch and handles asset rebalancing
     /// @dev This function closes the kMinter batch and processes any negative netted assets
-    ///      by requesting redemption from the delta-neutral meta-vault
+    ///      by requesting redemption from the delta-neutral meta-wallet
     /// @param _asset The asset address for which to close the batch
     /// @return _proposalId The proposal ID for the settlement, or bytes32(0) if no netting is needed
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId);
@@ -155,9 +155,9 @@ interface IkSettler {
     /// @param _create if we create a new batch or not
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable;
 
-    /// @notice Liquidates insurance's metavault shares to underlying assets
+    /// @notice Liquidates insurance's metawallet shares to underlying assets
     /// @dev Calls requestRedeem + redeem through the insurance smart account.
-    ///      After execution, insurance will hold underlying assets instead of metavault shares.
+    ///      After execution, insurance will hold underlying assets instead of metawallet shares.
     /// @param _asset The asset for which to liquidate insurance shares
     function liquidateInsurance(address _asset) external payable;
 
