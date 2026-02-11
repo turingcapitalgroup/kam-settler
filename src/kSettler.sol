@@ -78,6 +78,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         address _kAssetRouter,
         address _registry
     ) {
+        require(_owner != address(0), KSETTLER_ADDRESS_ZERO);
+        require(_admin != address(0), KSETTLER_ADDRESS_ZERO);
+        require(_relayer != address(0), KSETTLER_ADDRESS_ZERO);
+        require(_kMinter != address(0), KSETTLER_ADDRESS_ZERO);
+        require(_kAssetRouter != address(0), KSETTLER_ADDRESS_ZERO);
+        require(_registry != address(0), KSETTLER_ADDRESS_ZERO);
+
         kMinter = IkMinter(_kMinter);
         kAssetRouter = IkAssetRouter(_kAssetRouter);
         registry = IRegistry(_registry);
