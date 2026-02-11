@@ -20,7 +20,8 @@ import {
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
     KSETTLER_INSUFFICIENT_BALANCE,
-    KSETTLER_INVALID_PROFIT_SHARE_BPS
+    KSETTLER_INVALID_PROFIT_SHARE_BPS,
+    KSETTLER_INVALID_VAULT_TYPE
 } from "./errors/Errors.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
@@ -366,6 +367,14 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         returns (bytes32 _proposalId)
     {
         _checkRoles(RELAYER_ROLE);
+
+        // Only custodial vaults can use the generic proposeSettleBatch.
+        // kMinter and DN vaults must settle through their dedicated functions.
+        uint8 _vaultType = registry.getVaultType(_vault);
+        require(
+            _vaultType != uint8(IRegistryBase.VaultType.MINTER) && _vaultType != uint8(IRegistryBase.VaultType.DN),
+            KSETTLER_INVALID_VAULT_TYPE
+        );
 
         _proposalId = kAssetRouter.proposeSettleBatch(
             _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
