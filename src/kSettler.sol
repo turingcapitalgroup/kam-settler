@@ -522,7 +522,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
     /// @param _dnAdapterAssets Current assets in the DN adapter
     /// @param _deposited Total amount deposited in the batch
     /// @param _pendingShares Number of shares pending redemption
-    /// @param _dnMetaVault Address of the delta-neutral meta-wallet
+    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
     /// @param _kMinterAdapter Address of the kMinter adapter
     /// @param _dnVaultAdapter Address of the DN vault adapter
     /// @return The net amount of assets after netting (can be negative)
@@ -530,7 +530,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         uint256 _dnAdapterAssets,
         uint256 _deposited,
         uint256 _pendingShares,
-        IERC7540 _dnMetaVault,
+        IERC7540 _dnMetaWallet,
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _dnVaultAdapter,
         IkStakingVault _vault
@@ -549,11 +549,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         if (_nettedAssets_ == 0) return 0;
 
         // Convert netted assets to shares for transfer
-        uint256 _nettedShares = _dnMetaVault.convertToShares(_nettedAssets_.abs());
+        uint256 _nettedShares = _dnMetaWallet.convertToShares(_nettedAssets_.abs());
 
         // Execute the netted transfer between adapters
         _executeNettedTransfer(
-            _nettedAssets_ > 0, address(_dnMetaVault), address(_kMinterAdapter), address(_dnVaultAdapter), _nettedShares
+            _nettedAssets_ > 0, address(_dnMetaWallet), address(_kMinterAdapter), address(_dnVaultAdapter), _nettedShares
         );
 
         return _nettedAssets_;
@@ -593,12 +593,12 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
     /// @notice Calculates the depeg between actual and expected kMinter adapter assets
     /// @dev Positive depeg means surplus (profit), negative depeg means deficit (loss)
     /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _dnMetaVault Address of the delta-neutral meta-wallet
+    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
     /// @return Depeg value: positive = surplus/profit, negative = deficit/loss
-    function _getDepeg(IMinimalSmartAccount _kMinterAdapter, IERC7540 _dnMetaVault) internal view returns (int256) {
+    function _getDepeg(IMinimalSmartAccount _kMinterAdapter, IERC7540 _dnMetaWallet) internal view returns (int256) {
         // Get current shares and assets in kMinter adapter
-        uint256 _kMinterShares = _dnMetaVault.balanceOf(address(_kMinterAdapter));
-        uint256 _actualKMinterAssets = _dnMetaVault.convertToAssets(_kMinterShares);
+        uint256 _kMinterShares = _dnMetaWallet.balanceOf(address(_kMinterAdapter));
+        uint256 _actualKMinterAssets = _dnMetaWallet.convertToAssets(_kMinterShares);
 
         // Get expected assets based on kToken total supply
         uint256 _expectedKMinterAssets = IVaultAdapter(address(_kMinterAdapter)).totalAssets();
@@ -610,16 +610,16 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
     function _rebalance(
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _dnVaultAdapter,
-        IERC7540 _dnMetaVault,
+        IERC7540 _dnMetaWallet,
         int256 _difference
     )
         internal
     {
         if (_difference != 0) {
-            uint256 _shareValue = _dnMetaVault.convertToShares(_difference.abs());
+            uint256 _shareValue = _dnMetaWallet.convertToShares(_difference.abs());
             // Adjust any dust
-            while (_dnMetaVault.convertToAssets(_shareValue) < _difference.abs()) _shareValue += 1;
-            _executeRebalanceTransfer(_difference > 0, _dnMetaVault, _kMinterAdapter, _dnVaultAdapter, _shareValue);
+            while (_dnMetaWallet.convertToAssets(_shareValue) < _difference.abs()) _shareValue += 1;
+            _executeRebalanceTransfer(_difference > 0, _dnMetaWallet, _kMinterAdapter, _dnVaultAdapter, _shareValue);
         }
     }
 
@@ -660,13 +660,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
     /// @dev Computes management and performance fees and transfers them to treasury
     /// @param _vault Address of the vault to calculate fees for
     /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @param _dnMetaVault Address of the delta-neutral meta-wallet
+    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
     /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
     function _fees(
         IkStakingVault _vault,
         IMinimalSmartAccount _dnVaultAdapter,
-        IERC7540 _dnMetaVault
+        IERC7540 _dnMetaWallet
     )
         internal
         returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
@@ -674,24 +674,24 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         // Calculate fees and get timestamps
         uint256 _feeShares;
         (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-            _calculateFees(_vault, _dnMetaVault);
+            _calculateFees(_vault, _dnMetaWallet);
 
         // If there are fees to charge, execute the transfer
         if (_feeShares > 0) {
-            _executeFeeTransfer(_dnMetaVault, _dnVaultAdapter, _feeShares);
+            _executeFeeTransfer(_dnMetaWallet, _dnVaultAdapter, _feeShares);
         }
     }
 
     /// @notice Calculates management and performance fees for the vault
     /// @dev Determines if fees are due and calculates the total fee shares
     /// @param _vault Address of the vault to calculate fees for
-    /// @param _dnMetaVault Address of the metawallet
+    /// @param _dnMetaWallet Address of the metawallet
     /// @return _feeShares Total number of fee shares to charge
     /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
     function _calculateFees(
         IkStakingVault _vault,
-        IERC7540 _dnMetaVault
+        IERC7540 _dnMetaWallet
     )
         internal
         view
@@ -720,16 +720,16 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
             _lastFeesChargedDatePerformance = uint64(block.timestamp);
         }
 
-        _feeShares = _dnMetaVault.convertToShares(feeAssets);
+        _feeShares = _dnMetaWallet.convertToShares(feeAssets);
     }
 
     /// @notice Executes the transfer of fee shares to the treasury
     /// @dev Transfers calculated fee shares from the meta-wallet to the treasury
-    /// @param _dnMetaVault Address of the delta-neutral meta-wallet
+    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
     /// @param _dnVaultAdapter Address of the DN vault adapter
     /// @param _feeShares Number of fee shares to transfer
     function _executeFeeTransfer(
-        IERC7540 _dnMetaVault,
+        IERC7540 _dnMetaWallet,
         IMinimalSmartAccount _dnVaultAdapter,
         uint256 _feeShares
     )
@@ -740,7 +740,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
         // Generate execution data for fee transfer
         Execution[] memory _executions =
-            ExecutionDataLibrary.getTransferExecutionData(address(_dnMetaVault), _treasury, _feeShares);
+            ExecutionDataLibrary.getTransferExecutionData(address(_dnMetaWallet), _treasury, _feeShares);
 
         // Execute the transfer through the DN vault adapter
         _executeAdapterCall(_dnVaultAdapter, _executions);
