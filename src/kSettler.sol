@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 // External Libraries
 import { OptimizedOwnableRoles } from "kam/src/vendor/solady/auth/OptimizedOwnableRoles.sol";
+import { OptimizedReentrancyGuardTransient } from "kam/src/vendor/solady/utils/OptimizedReentrancyGuardTransient.sol";
 
 // Internal Libraries
 import { ExecutionDataLibrary } from "./libraries/ExecutionDataLibrary.sol";
@@ -32,7 +33,7 @@ import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalS
 /// @dev This contract handles the complex settlement process for delta-neutral vault batches,
 ///      including rebalancing, fee calculations, and asset netting operations.
 ///      It manages the interaction between kMinter, vault adapters, and meta-wallets.
-contract kSettler is IkSettler, OptimizedOwnableRoles {
+contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardTransient {
     using VaultMathLibrary for IkStakingVault;
     using OptimizedFixedPointMathLib for int256;
     using ExecutionLib for bytes;
@@ -111,6 +112,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId) {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         // Retrieve current batch information
@@ -136,7 +138,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         (uint256 _deposited, uint256 _requested) = kAssetRouter.getBatchIdBalances(address(kMinter), _batchInfo.batchId);
         int256 _nettedAmount = int256(_deposited) - int256(_requested);
 
-        if (_nettedAmount == 0) return bytes32(0);
+        if (_nettedAmount == 0) {
+            _unlockReentrant();
+            return bytes32(0);
+        }
 
         uint256 _adapterAssets;
 
@@ -170,6 +175,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
             _executeAdapterCall(_adapter, _execution);
         }
         _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
+        _unlockReentrant();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -178,7 +184,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId) {
-        return _closeAndProposeDNVaultBatch(_asset, 0);
+        _lockReentrant();
+        _proposalId = _closeAndProposeDNVaultBatch(_asset, 0);
+        _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
@@ -190,7 +198,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         payable
         returns (bytes32 _proposalId)
     {
-        return _closeAndProposeDNVaultBatch(_asset, _profitShareBps);
+        _lockReentrant();
+        _proposalId = _closeAndProposeDNVaultBatch(_asset, _profitShareBps);
+        _unlockReentrant();
     }
 
     /// @notice Internal implementation for closing and proposing DN vault batch
@@ -292,27 +302,34 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function executeSettleBatch(bytes32 _proposalId) external payable {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         kAssetRouter.executeSettleBatch(_proposalId);
+        _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
     function acceptProposal(bytes32 _proposalId) external {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         kAssetRouter.acceptProposal(_proposalId);
+        _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
     function cancelProposal(bytes32 _proposalId) external {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         kAssetRouter.cancelProposal(_proposalId);
+        _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
     function liquidateInsurance(address _asset) external payable {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         // Get insurance address from registry
@@ -337,7 +354,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
         // Get insurance's share balance
         uint256 _shares = _metavault.balanceOf(_insurance);
-        if (_shares == 0) return;
+        if (_shares == 0) {
+            _unlockReentrant();
+            return;
+        }
 
         // Build executions for requestRedeem + redeem
         Execution[] memory _executions = new Execution[](2);
@@ -351,6 +371,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
 
         emit InsuranceLiquidated(_asset, _shares, _metavault.convertToAssets(_shares));
+        _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
@@ -366,6 +387,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         payable
         returns (bytes32 _proposalId)
     {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         // Only custodial vaults can use the generic proposeSettleBatch.
@@ -379,13 +401,16 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         _proposalId = kAssetRouter.proposeSettleBatch(
             _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
         );
+        _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         IkStakingVault(_vault).closeBatch(_batchId, _create);
+        _unlockReentrant();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -394,6 +419,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
     /// @inheritdoc IkSettler
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
+        _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
@@ -416,7 +442,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
         address _targetCustodial = _getTarget(address(_vaultAdapter));
         int256 _netted = int256(_proposal.netted);
 
-        if (_proposal.netted == 0) return;
+        if (_proposal.netted == 0) {
+            _unlockReentrant();
+            return;
+        }
         if (_proposal.netted > 0) {
             uint256 _nettedAbs = uint256(_netted);
             uint256 _shares = _metavault.convertToShares(_nettedAbs);
@@ -449,6 +478,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
             _executeAdapterCall(_kMinterAdapter, _executions);
         }
+        _unlockReentrant();
     }
 
     /*//////////////////////////////////////////////////////////////
