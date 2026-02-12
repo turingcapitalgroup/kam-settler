@@ -398,6 +398,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
 
+        // Only custodial vaults (Alpha, Beta, etc.) can use finaliseCustodialSettlement
+        uint8 _vaultType = registry.getVaultType(_proposal.vault);
+        require(
+            _vaultType != uint8(IRegistryBase.VaultType.MINTER) && _vaultType != uint8(IRegistryBase.VaultType.DN),
+            KSETTLER_INVALID_VAULT_TYPE
+        );
+
         IMinimalSmartAccount _kMinterAdapter =
             IMinimalSmartAccount(registry.getAdapter(address(kMinter), _proposal.asset));
         IMinimalSmartAccount _vaultAdapter =
@@ -553,7 +560,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles {
 
         // Execute the netted transfer between adapters
         _executeNettedTransfer(
-            _nettedAssets_ > 0, address(_dnMetaWallet), address(_kMinterAdapter), address(_dnVaultAdapter), _nettedShares
+            _nettedAssets_ > 0,
+            address(_dnMetaWallet),
+            address(_kMinterAdapter),
+            address(_dnVaultAdapter),
+            _nettedShares
         );
 
         return _nettedAssets_;
