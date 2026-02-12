@@ -143,7 +143,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             return bytes32(0);
         }
 
-        uint256 _adapterAssets;
+        uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
         if (_nettedAmount < 0) {
             // Convert absolute value of netted assets to shares
@@ -163,11 +163,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                 ExecutionDataLibrary.getRedeemExecutionData(_target, address(_adapter), address(_adapter), _shares)[0];
 
             _executeAdapterCall(_adapter, _executions);
-
-            _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
         } else {
-            _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
-
             Execution[] memory _execution = ExecutionDataLibrary.getDepositExecutionData(
                 _target, address(_adapter), address(_adapter), uint256(_nettedAmount)
             );
@@ -359,6 +355,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             return;
         }
 
+        uint256 _assetsValue = _metavault.convertToAssets(_shares);
+
         // Build executions for requestRedeem + redeem
         Execution[] memory _executions = new Execution[](2);
 
@@ -370,7 +368,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Execute through insurance smart account
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
 
-        emit InsuranceLiquidated(_asset, _shares, _metavault.convertToAssets(_shares));
+        emit InsuranceLiquidated(_asset, _shares, _assetsValue);
         _unlockReentrant();
     }
 
