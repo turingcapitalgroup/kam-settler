@@ -102,6 +102,30 @@ library ExecutionDataLibrary {
         });
     }
 
+    /// @notice Generates execution data for an ERC7540 withdraw
+    /// @param _target The ERC7540 vault contract address
+    /// @param _receiver The address that will receive the assets
+    /// @param _controller The controller address
+    /// @param _assets The amount of assets to withdraw
+    /// @return _executions Array containing a single withdraw Execution
+    function getWithdrawExecutionData(
+        address _target,
+        address _receiver,
+        address _controller,
+        uint256 _assets
+    )
+        internal
+        pure
+        returns (Execution[] memory _executions)
+    {
+        _executions = new Execution[](1);
+        _executions[0] = Execution({
+            target: _target,
+            value: 0,
+            callData: abi.encodeWithSelector(IERC7540.withdraw.selector, _assets, _receiver, _controller)
+        });
+    }
+
     /// @notice Generates execution data for an ERC7540 deposit (requestDeposit + deposit)
     /// @param _target The ERC7540 vault contract address
     /// @param _receiver The address that will receive the shares
