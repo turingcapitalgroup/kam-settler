@@ -527,7 +527,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _vault
         );
 
-        _assetData._newTotalAssets = _assetData._dnAdapterAssets;
+        // Re-read actual DN adapter balance after netting to avoid stale snapshot
+        _assetData._newTotalAssets = _metavault.convertToAssets(_metavault.balanceOf(address(_vaultAdapter)));
     }
 
     /// @dev Handles the netting process by transferring assets between adapters based on the difference
