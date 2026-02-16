@@ -54,72 +54,33 @@ library ExecutionDataLibrary {
         });
     }
 
-    /// @notice Generates execution data for an ERC7540 requestRedeem
-    /// @param _target The ERC7540 vault contract address
-    /// @param _controller The controller for the redeem request
-    /// @param _owner The owner of the shares to redeem
-    /// @param _shares The amount of shares to request for redemption
-    /// @return _executions Array containing a single requestRedeem Execution
-    function getRequestRedeemExecutionData(
-        address _target,
-        address _controller,
-        address _owner,
-        uint256 _shares
-    )
-        internal
-        pure
-        returns (Execution[] memory _executions)
-    {
-        _executions = new Execution[](1);
-        _executions[0] = Execution({
-            target: _target,
-            value: 0,
-            callData: abi.encodeWithSelector(IERC7540.requestRedeem.selector, _shares, _controller, _owner)
-        });
-    }
-
-    /// @notice Generates execution data for an ERC7540 redeem
+    /// @notice Generates execution data for an ERC7540 withdraw (requestRedeem + withdraw)
     /// @param _target The ERC7540 vault contract address
     /// @param _receiver The address that will receive the assets
     /// @param _controller The controller address
-    /// @param _shares The amount of shares to redeem
-    /// @return _executions Array containing a single redeem Execution
-    function getRedeemExecutionData(
-        address _target,
-        address _receiver,
-        address _controller,
-        uint256 _shares
-    )
-        internal
-        pure
-        returns (Execution[] memory _executions)
-    {
-        _executions = new Execution[](1);
-        _executions[0] = Execution({
-            target: _target,
-            value: 0,
-            callData: abi.encodeWithSelector(IERC7540.redeem.selector, _shares, _receiver, _controller)
-        });
-    }
-
-    /// @notice Generates execution data for an ERC7540 withdraw
-    /// @param _target The ERC7540 vault contract address
-    /// @param _receiver The address that will receive the assets
-    /// @param _controller The controller address
+    /// @param _shares The amount of shares for the requestRedeem
     /// @param _assets The amount of assets to withdraw
-    /// @return _executions Array containing a single withdraw Execution
+    /// @return _executions Array containing two Execution structs for requestRedeem and withdraw
     function getWithdrawExecutionData(
         address _target,
         address _receiver,
         address _controller,
+        uint256 _shares,
         uint256 _assets
     )
         internal
         pure
         returns (Execution[] memory _executions)
     {
-        _executions = new Execution[](1);
+        _executions = new Execution[](2);
+
         _executions[0] = Execution({
+            target: _target,
+            value: 0,
+            callData: abi.encodeWithSelector(IERC7540.requestRedeem.selector, _shares, _controller, _receiver)
+        });
+
+        _executions[1] = Execution({
             target: _target,
             value: 0,
             callData: abi.encodeWithSelector(IERC7540.withdraw.selector, _assets, _receiver, _controller)

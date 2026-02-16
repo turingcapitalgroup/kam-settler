@@ -149,14 +149,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             // Convert absolute value of netted assets to shares for the redeem request
             uint256 _shares = _metavault.convertToShares(_abs);
 
-            // Money should always be iddle if not revert and divest 1st.
-            Execution[] memory _executions = new Execution[](2);
-
-            _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
-                _target, address(_adapter), address(_adapter), _shares
-            )[0];
-            _executions[1] =
-                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _abs)[0];
+            // Money should always be idle if not revert and divest 1st.
+            Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
+                _target, address(_adapter), address(_adapter), _shares, _abs
+            );
 
             _executeAdapterCall(_adapter, _executions);
         } else {
@@ -311,13 +307,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         uint256 _assetsValue = _metavault.convertToAssets(_shares);
 
-        // Build executions for requestRedeem + redeem
-        Execution[] memory _executions = new Execution[](2);
-
-        _executions[0] =
-            ExecutionDataLibrary.getRequestRedeemExecutionData(_metavaultAddr, _insurance, _insurance, _shares)[0];
-
-        _executions[1] = ExecutionDataLibrary.getRedeemExecutionData(_metavaultAddr, _insurance, _insurance, _shares)[0];
+        // Build executions for requestRedeem + withdraw
+        Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
+            _metavaultAddr, _insurance, _insurance, _shares, _assetsValue
+        );
 
         // Execute through insurance smart account
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
@@ -403,13 +396,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             uint256 _shares = _metavault.convertToShares(_nettedAbs);
 
             // Execute redemption request through the kMinter adapter
-            Execution[] memory _executions = new Execution[](2);
-            _executions[0] = ExecutionDataLibrary.getRequestRedeemExecutionData(
-                address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
-            )[0];
-            _executions[1] = ExecutionDataLibrary.getWithdrawExecutionData(
-                address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _nettedAbs
-            )[0];
+            Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
+                address(_metavault), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares, _nettedAbs
+            );
 
             // requestRedeem + withdraw assets from metawallet using kMinter adapter
             _executeAdapterCall(_kMinterAdapter, _executions);

@@ -760,14 +760,14 @@ contract kSettlerTest is BaseVaultTest {
 
         // Set up insurance executor permissions for metawallet operations
         bytes4 requestRedeemSelector = IERC7540.requestRedeem.selector;
-        bytes4 redeemSelector = IERC7540.redeem.selector;
+        bytes4 withdrawSelector = IERC7540.withdraw.selector;
 
         // Cast registry to IExecutionGuardian to access setAllowedSelector
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
 
-        // Allow insurance to call requestRedeem and redeem on the metawallet (targetType = 0 for METAVAULT)
+        // Allow insurance to call requestRedeem and withdraw on the metawallet (targetType = 0 for METAVAULT)
         guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, requestRedeemSelector, true);
-        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, redeemSelector, true);
+        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, withdrawSelector, true);
 
         vm.stopPrank();
     }
