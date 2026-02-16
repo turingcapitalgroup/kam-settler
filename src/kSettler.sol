@@ -303,24 +303,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     }
 
     /// @inheritdoc IkSettler
-    function acceptProposal(bytes32 _proposalId) external {
-        _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
-
-        kAssetRouter.acceptProposal(_proposalId);
-        _unlockReentrant();
-    }
-
-    /// @inheritdoc IkSettler
-    function cancelProposal(bytes32 _proposalId) external {
-        _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
-
-        kAssetRouter.cancelProposal(_proposalId);
-        _unlockReentrant();
-    }
-
-    /// @inheritdoc IkSettler
     function liquidateInsurance(address _asset) external payable {
         _lockReentrant();
         _checkRoles(RELAYER_ROLE);
