@@ -5,6 +5,7 @@ import { console2 as console } from "forge-std/console2.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
+import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
@@ -281,7 +282,7 @@ contract kSettlerTest is BaseVaultTest {
         uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
 
         uint256 aliceSharesBefore = vault.balanceOf(users.alice);
 
@@ -300,7 +301,7 @@ contract kSettlerTest is BaseVaultTest {
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
 
         aliceSharesBefore = vault.balanceOf(users.alice);
 
@@ -315,7 +316,7 @@ contract kSettlerTest is BaseVaultTest {
 
         uint256 sharePriceBefore = vault.sharePrice();
         proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
 
         uint256 sharePriceAfter = vault.sharePrice();
         assertGt(sharePriceAfter, sharePriceBefore);
@@ -331,6 +332,15 @@ contract kSettlerTest is BaseVaultTest {
         vm.startPrank(users.relayer);
         proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc);
         vm.stopPrank();
+    }
+
+    function _acceptAndExecute(bytes32 proposalId) internal {
+        IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
+        if (proposal.requiresApproval) {
+            vm.prank(users.guardian);
+            assetRouter.acceptProposal(proposalId);
+        }
+        assetRouter.executeSettleBatch(proposalId);
     }
 
     function _getDepeg() internal view returns (int256) {
@@ -495,6 +505,10 @@ contract kSettlerTest is BaseVaultTest {
 
         assertEq(treasurySharesReceived, expectedTreasuryShares);
 
+        // Large yields require guardian approval before execution
+        vm.prank(users.guardian);
+        assetRouter.acceptProposal(proposalId);
+
         assetRouter.executeSettleBatch(proposalId);
     }
 
@@ -568,16 +582,19 @@ contract kSettlerTest is BaseVaultTest {
         assertEq(insuranceSharesReceived, expectedInsuranceShares);
         assertEq(treasurySharesReceived, expectedTreasuryShares);
 
+        // Large yields require guardian approval before execution
+        vm.prank(users.guardian);
+        assetRouter.acceptProposal(proposalId);
+
         assetRouter.executeSettleBatch(proposalId);
     }
 
-    function test_settler_dn_batch_with_profit_share_bps() public {
+    function test_settler_dn_batch_all_profit_distributed() public {
         _setFeesToZero();
         _disableProfitDistribution();
 
         uint256 metaVaultProfit = 200e6;
         uint256 depositAmount = 100e6;
-        uint16 profitShareBps = 5000;
 
         test_settler_kminter_netted_positive();
 
@@ -616,12 +633,10 @@ contract kSettlerTest is BaseVaultTest {
             profitShares += 1;
         }
 
-        uint256 remainingShares = profitShares;
-        uint256 expectedVaultAdapterProfitShares = (remainingShares * profitShareBps) / 10_000;
+        // All profit shares should go to vault adapter (no partial distribution)
+        uint256 expectedVaultAdapterProfitShares = profitShares;
 
-        vm.startPrank(users.relayer);
-        proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, profitShareBps);
-        vm.stopPrank();
+        proposalId = _closeAndProposeDeltaNeutralBatch();
 
         uint256 dnAdapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
         uint256 vaultAdapterSharesReceived = dnAdapterBalanceAfter - dnAdapterBalanceBefore;

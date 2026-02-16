@@ -78,27 +78,13 @@ interface IkSettler {
     /// @param _relayer address to be granted the relayer role
     function grantRelayerRole(address _relayer) external payable;
 
-    /// @notice Closes a delta-neutral vault batch and initiates settlement with default profit share
+    /// @notice Closes a delta-neutral vault batch and initiates settlement
     /// @dev This function handles the complete settlement process for DN vault batches,
-    ///      including rebalancing, fee calculation, and asset netting. Uses 0 profit share.
+    ///      including rebalancing, fee calculation, asset netting, and profit distribution.
+    ///      All profit is distributed: insurance (up to target) -> treasury -> vault adapter
     /// @param _asset The asset address for which to close the batch
     /// @return _proposalId The proposal ID for the settlement
     function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId);
-
-    /// @notice Closes a delta-neutral vault batch and initiates settlement with profit sharing
-    /// @dev This function handles the complete settlement process for DN vault batches,
-    ///      including rebalancing, fee calculation, asset netting, and profit distribution.
-    ///      Profit is distributed: insurance (up to target) -> treasury -> vault adapter -> kMinter keeps rest
-    /// @param _asset The asset address for which to close the batch
-    /// @param _profitShareBps Basis points of remaining profit (after insurance + treasury) to send to vault adapter
-    /// @return _proposalId The proposal ID for the settlement
-    function closeAndProposeDNVaultBatch(
-        address _asset,
-        uint16 _profitShareBps
-    )
-        external
-        payable
-        returns (bytes32 _proposalId);
 
     /// @notice Closes a kMinter batch and handles asset rebalancing
     /// @dev This function closes the kMinter batch and processes any negative netted assets

@@ -21,7 +21,6 @@ import {
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
     KSETTLER_INSUFFICIENT_BALANCE,
-    KSETTLER_INVALID_PROFIT_SHARE_BPS,
     KSETTLER_INVALID_VAULT_TYPE
 } from "./errors/Errors.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
@@ -178,40 +177,16 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId) {
         _lockReentrant();
-        _proposalId = _closeAndProposeDNVaultBatch(_asset, 0);
-        _unlockReentrant();
-    }
-
-    /// @inheritdoc IkSettler
-    function closeAndProposeDNVaultBatch(
-        address _asset,
-        uint16 _profitShareBps
-    )
-        external
-        payable
-        returns (bytes32 _proposalId)
-    {
-        _lockReentrant();
-        _proposalId = _closeAndProposeDNVaultBatch(_asset, _profitShareBps);
+        _proposalId = _closeAndProposeDNVaultBatch(_asset);
         _unlockReentrant();
     }
 
     /// @notice Internal implementation for closing and proposing DN vault batch
     /// @param _asset The asset address for which to close the batch
-    /// @param _profitShareBps Basis points of remaining profit to send to vault adapter
     /// @return _proposalId The proposal ID for the settlement
-    function _closeAndProposeDNVaultBatch(
-        address _asset,
-        uint16 _profitShareBps
-    )
-        internal
-        returns (bytes32 _proposalId)
-    {
+    function _closeAndProposeDNVaultBatch(address _asset) internal returns (bytes32 _proposalId) {
         // Ensure only authorized relayers can call this function
         _checkRoles(RELAYER_ROLE);
-
-        // Validate profit share is reasonable (max 100%)
-        require(_profitShareBps <= 10_000, KSETTLER_INVALID_PROFIT_SHARE_BPS);
 
         // Get all required addresses for the asset
         IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
@@ -245,8 +220,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                     _metavault,
                     _kMinterAdapter,
                     _profitAssets,
-                    _profitShareBps,
-                    true // isVaultSettlement
+                    true, // isVaultSettlement
+                    _asset
                 );
 
                 // Transfer remaining shares to vault adapter if any
@@ -527,8 +502,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _vault
         );
 
-        // Re-read actual DN adapter balance after netting to avoid stale snapshot
-        _assetData._newTotalAssets = _metavault.convertToAssets(_metavault.balanceOf(address(_vaultAdapter)));
+        _assetData._newTotalAssets = _assetData._dnAdapterAssets;
     }
 
     /// @dev Handles the netting process by transferring assets between adapters based on the difference
@@ -795,10 +769,12 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @dev Target is insuranceBps/10000 * kMinterAdapter.totalAssets()
     /// @param _metavault The metawallet for share/asset conversion
     /// @param _kMinterAdapter The kMinter adapter (for totalAssets as base)
+    /// @param _asset The underlying asset address (e.g., USDC)
     /// @return _deficitAssets Assets still needed by insurance (0 if target met)
     function _getInsuranceDeficit(
         IERC7540 _metavault,
-        IMinimalSmartAccount _kMinterAdapter
+        IMinimalSmartAccount _kMinterAdapter,
+        address _asset
     )
         internal
         view
@@ -812,9 +788,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         uint256 _kMinterTotalAssets = IVaultAdapter(address(_kMinterAdapter)).totalAssets();
         uint256 _insuranceTarget = (_kMinterTotalAssets * _insuranceBps) / 10_000;
 
-        // Current insurance balance in assets
+        // Current insurance balance: metavault shares + underlying tokens (post-liquidation)
         uint256 _insuranceShares = _metavault.balanceOf(_insurance);
-        uint256 _insuranceAssets = _metavault.convertToAssets(_insuranceShares);
+        uint256 _insuranceAssets = _metavault.convertToAssets(_insuranceShares) + IkToken(_asset).balanceOf(_insurance);
 
         if (_insuranceAssets >= _insuranceTarget) return 0;
 
@@ -822,19 +798,20 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     }
 
     /// @notice Distributes profit shares according to priority: insurance -> treasury -> vault adapter
-    /// @dev All distributions are in metawallet shares. Remaining profit stays with kMinter.
+    /// @dev All distributions are in metawallet shares. All remaining profit after insurance and
+    ///      treasury is sent to the vault adapter to maintain kMinter peg.
     /// @param _metavault The metawallet contract
     /// @param _kMinterAdapter The kMinter adapter holding the profit shares
     /// @param _profitAssets Total profit in assets (positive depeg value)
-    /// @param _profitShareBps Basis points of remaining profit to send to vault adapter
     /// @param _isVaultSettlement True if this is a DN/custodial vault settlement
+    /// @param _asset The underlying asset address (e.g., USDC)
     /// @return _sharesToVaultAdapter Shares that should be transferred to vault adapter
     function _distributeProfitShares(
         IERC7540 _metavault,
         IMinimalSmartAccount _kMinterAdapter,
         uint256 _profitAssets,
-        uint16 _profitShareBps,
-        bool _isVaultSettlement
+        bool _isVaultSettlement,
+        address _asset
     )
         internal
         returns (uint256 _sharesToVaultAdapter)
@@ -854,7 +831,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         (address _treasury, address _insurance, uint16 _treasuryBps,) = registry.getSettlementConfig();
 
         // 1. Insurance priority distribution
-        uint256 _insuranceDeficitAssets = _getInsuranceDeficit(_metavault, _kMinterAdapter);
+        uint256 _insuranceDeficitAssets = _getInsuranceDeficit(_metavault, _kMinterAdapter, _asset);
         uint256 _insuranceShares = 0;
 
         if (_insuranceDeficitAssets > 0 && _insurance != address(0)) {
@@ -879,11 +856,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // 3. Remaining profit goes to vault adapter to maintain kMinter peg
         // kMinter should never hold excess profit - it must stay pegged to kToken supply
-        // For vault settlements: ALL remaining shares go to the vault adapter being settled
-        // The profitShareBps parameter controls how much of this the settled vault keeps vs DN vault
-        // (handled by caller for non-DN settlements)
         if (_isVaultSettlement && _remainingShares > 0) {
-            _sharesToVaultAdapter = _remainingShares * _profitShareBps / 10_000;
+            _sharesToVaultAdapter = _remainingShares;
         }
 
         emit ProfitDistributed(_insuranceShares, _treasuryShares, _sharesToVaultAdapter);
