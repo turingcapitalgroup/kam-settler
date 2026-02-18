@@ -137,11 +137,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         (uint256 _deposited, uint256 _requested) = kAssetRouter.getBatchIdBalances(address(kMinter), _batchInfo.batchId);
         int256 _nettedAmount = int256(_deposited) - int256(_requested);
 
-        if (_nettedAmount == 0) {
-            _unlockReentrant();
-            return bytes32(0);
-        }
-
         uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
         if (_nettedAmount < 0) {
@@ -155,7 +150,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             );
 
             _executeAdapterCall(_adapter, _executions);
-        } else {
+        } else if (_nettedAmount > 0) {
             Execution[] memory _execution = ExecutionDataLibrary.getDepositExecutionData(
                 _target, address(_adapter), address(_adapter), uint256(_nettedAmount)
             );
