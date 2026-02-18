@@ -50,6 +50,12 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @notice The registry contract for address resolution
     IRegistry public registry;
 
+    /// @notice Snapshot of kMinter adapter MetaVault shares taken before minter batch deposit/redeem.
+    /// @dev Stored as actual_shares + 1 so that 0 means "no snapshot". Used by _getDepeg() to avoid
+    ///      reading a post-mutation balanceOf() when closeAndProposeMinterBatch() runs before
+    /// closeAndProposeDNVaultBatch().
+    mapping(address asset => uint256) internal _kMinterAdapterSharesSnapshot;
+
     /*//////////////////////////////////////////////////////////////
                               ROLES
     //////////////////////////////////////////////////////////////*/
@@ -139,6 +145,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
+        // Snapshot kMinter adapter shares before deposit/redeem mutates the MetaVault.
+        // _getDepeg() uses this to avoid reading a post-mutation balanceOf() when
+        // closeAndProposeDNVaultBatch() runs after this function.
+        _kMinterAdapterSharesSnapshot[_asset] = _metavault.balanceOf(address(_adapter)) + 1;
+
         if (_nettedAmount < 0) {
             uint256 _abs = _nettedAmount.abs();
             // Convert absolute value of netted assets to shares for the redeem request
@@ -199,7 +210,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Handle profit distribution and rebalancing
         // Depeg: positive = surplus/profit, negative = deficit/loss
-        int256 _depeg = _getDepeg(_kMinterAdapter, _metavault);
+        int256 _depeg = _getDepeg(_kMinterAdapter, _metavault, _asset);
 
         // Do not send profit when total supply is zero, to avoid shares inflation
         if (_vault.totalSupply() != 0) {
@@ -566,13 +577,31 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     }
 
     /// @notice Calculates the depeg between actual and expected kMinter adapter assets
-    /// @dev Positive depeg means surplus (profit), negative depeg means deficit (loss)
+    /// @dev Positive depeg means surplus (profit), negative depeg means deficit (loss).
+    ///      Uses the pre-mutation share snapshot if closeAndProposeMinterBatch() has already run
+    ///      for this asset, to avoid counting the minter batch deposit/redeem as phantom profit/loss.
     /// @param _kMinterAdapter Address of the kMinter adapter
     /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
+    /// @param _asset Address of the underlying asset
     /// @return Depeg value: positive = surplus/profit, negative = deficit/loss
-    function _getDepeg(IMinimalSmartAccount _kMinterAdapter, IERC7540 _dnMetaWallet) internal view returns (int256) {
-        // Get current shares and assets in kMinter adapter
-        uint256 _kMinterShares = _dnMetaWallet.balanceOf(address(_kMinterAdapter));
+    function _getDepeg(
+        IMinimalSmartAccount _kMinterAdapter,
+        IERC7540 _dnMetaWallet,
+        address _asset
+    )
+        internal
+        returns (int256)
+    {
+        // Use pre-mutation snapshot if available, otherwise use live balance
+        uint256 _snapshot = _kMinterAdapterSharesSnapshot[_asset];
+        uint256 _kMinterShares;
+        if (_snapshot != 0) {
+            _kMinterShares = _snapshot - 1;
+            delete _kMinterAdapterSharesSnapshot[_asset];
+        } else {
+            _kMinterShares = _dnMetaWallet.balanceOf(address(_kMinterAdapter));
+        }
+
         uint256 _actualKMinterAssets = _dnMetaWallet.convertToAssets(_kMinterShares);
 
         // Get expected assets based on kToken total supply

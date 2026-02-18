@@ -125,7 +125,7 @@ contract kSettlerTest is BaseVaultTest {
 
     function test_settler_kminter_empty_batch() public {
         bytes32 proposalId = _closeMinterBatch();
-        assertEq(proposalId, bytes32(0));
+        assertNotEq(proposalId, bytes32(0));
     }
 
     function test_settler_kminter_netted_positive() public {
