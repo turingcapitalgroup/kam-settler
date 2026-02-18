@@ -587,22 +587,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         return int256(_actualKMinterAssets) - int256(_expectedKMinterAssets);
     }
 
-    function _rebalance(
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _dnVaultAdapter,
-        IERC7540 _dnMetaWallet,
-        int256 _difference
-    )
-        internal
-    {
-        if (_difference != 0) {
-            uint256 _shareValue = _dnMetaWallet.convertToShares(_difference.abs());
-            // Adjust any dust
-            while (_dnMetaWallet.convertToAssets(_shareValue) < _difference.abs()) _shareValue += 1;
-            _executeRebalanceTransfer(_difference > 0, _dnMetaWallet, _kMinterAdapter, _dnVaultAdapter, _shareValue);
-        }
-    }
-
     /// @notice Executes the rebalancing transfer between adapters
     /// @dev Transfers shares between adapters to achieve proper balance
     /// @param _isPositive Whether to transfer to kMinter adapter (true) or from it (false)
@@ -732,14 +716,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         assembly {
             _z := mul(gt(_x, _y), sub(_x, _y))
         }
-    }
-
-    /// @notice returns the vault type of the vault in the proposal
-    /// @param _proposalId the proposal id to get the vault type from
-    /// @return _vaultType the type of the vault in the proposal
-    function _getVaultType(bytes32 _proposalId) internal view returns (uint8 _vaultType) {
-        IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
-        _vaultType = registry.getVaultType(_proposal.vault);
     }
 
     /// @notice returns the target address of a given adapter
