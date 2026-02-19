@@ -25,6 +25,7 @@ import {
 } from "./errors/Errors.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
+import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
 import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /// @title kSettler
@@ -177,16 +178,33 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkSettler
-    function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId) {
+    function closeAndProposeDNVaultBatch(
+        address _asset,
+        uint256 _newMetaWalletTotalAssets,
+        bytes32 _rootHash
+    )
+        external
+        payable
+        returns (bytes32 _proposalId)
+    {
         _lockReentrant();
-        _proposalId = _closeAndProposeDNVaultBatch(_asset);
+        _proposalId = _closeAndProposeDNVaultBatch(_asset, _newMetaWalletTotalAssets, _rootHash);
         _unlockReentrant();
     }
 
     /// @notice Internal implementation for closing and proposing DN vault batch
     /// @param _asset The asset address for which to close the batch
+    /// @param _newMetaWalletTotalAssets The new total assets for the MetaWallet (idle + strategies)
+    /// @param _rootHash The merkle root committing to the strategy breakdown
     /// @return _proposalId The proposal ID for the settlement
-    function _closeAndProposeDNVaultBatch(address _asset) internal returns (bytes32 _proposalId) {
+    function _closeAndProposeDNVaultBatch(
+        address _asset,
+        uint256 _newMetaWalletTotalAssets,
+        bytes32 _rootHash
+    )
+        internal
+        returns (bytes32 _proposalId)
+    {
         // Ensure only authorized relayers can call this function
         _checkRoles(RELAYER_ROLE);
 
@@ -197,6 +215,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
         address _target = _getTarget(address(_vaultAdapter));
         IERC7540 _metavault = IERC7540(_target);
+
+        IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
 
         // Retrieve current batch information
         BatchInfo memory _batchInfo = _getBatchInfo(_vault);

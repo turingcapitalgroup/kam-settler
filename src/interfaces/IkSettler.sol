@@ -81,10 +81,21 @@ interface IkSettler {
     /// @notice Closes a delta-neutral vault batch and initiates settlement
     /// @dev This function handles the complete settlement process for DN vault batches,
     ///      including rebalancing, fee calculation, asset netting, and profit distribution.
-    ///      All profit is distributed: insurance (up to target) -> treasury -> vault adapter
+    ///      All profit is distributed: insurance (up to target) -> treasury -> vault adapter.
+    ///      Atomically settles the MetaWallet's virtualTotalAssets before computing depeg,
+    ///      so that profit distribution reflects real strategy yield.
     /// @param _asset The asset address for which to close the batch
+    /// @param _newMetaWalletTotalAssets The new total assets for the MetaWallet (idle + strategies)
+    /// @param _rootHash The merkle root committing to the strategy breakdown
     /// @return _proposalId The proposal ID for the settlement
-    function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId);
+    function closeAndProposeDNVaultBatch(
+        address _asset,
+        uint256 _newMetaWalletTotalAssets,
+        bytes32 _rootHash
+    )
+        external
+        payable
+        returns (bytes32 _proposalId);
 
     /// @notice Closes a kMinter batch and handles asset rebalancing
     /// @dev This function closes the kMinter batch and processes any negative netted assets

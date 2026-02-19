@@ -491,7 +491,9 @@ contract kSettlerHandler is BaseHandler {
         }
 
         // Use settler to close and propose DN vault batch
-        try settler.closeAndProposeDNVaultBatch(token) returns (bytes32 proposalId) {
+        uint256 _metavaultTotalAssets = token.balanceOf(address(metavault));
+        bytes32 _rootHash = keccak256(abi.encodePacked(address(metavault), _metavaultTotalAssets));
+        try settler.closeAndProposeDNVaultBatch(token, _metavaultTotalAssets, _rootHash) returns (bytes32 proposalId) {
             pendingDNSettlementProposals.add(proposalId);
             pendingDNUnsettledBatches.add(batchId);
 

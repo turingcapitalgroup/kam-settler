@@ -330,7 +330,9 @@ contract kSettlerTest is BaseVaultTest {
 
     function _closeAndProposeDeltaNeutralBatch() internal returns (bytes32 proposalId) {
         vm.startPrank(users.relayer);
-        proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc);
+        uint256 _totalAssets = tokens.usdc.balanceOf(address(erc7540USDC));
+        bytes32 _rootHash = keccak256(abi.encodePacked(address(erc7540USDC), _totalAssets));
+        proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, _totalAssets, _rootHash);
         vm.stopPrank();
     }
 
