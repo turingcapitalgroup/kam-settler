@@ -21,6 +21,7 @@ import {
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
     KSETTLER_INSUFFICIENT_BALANCE,
+    KSETTLER_INVALID_TARGET_TYPE,
     KSETTLER_INVALID_VAULT_TYPE,
     KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
@@ -135,7 +136,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Get adapter and metawallet
         IMinimalSmartAccount _adapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
-        address _target = _getTarget(address(_adapter));
+        address _target = _getTarget(address(_adapter), 0);
         IERC7540 _metawallet = IERC7540(_target);
 
         // NOTE: Profit distribution is NOT done here. It happens in DN vault batch settlement
@@ -214,7 +215,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         IkStakingVault _vault =
             IkStakingVault(registry.getVaultByAssetAndType(_asset, uint8(IRegistryBase.VaultType.DN)));
         IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
-        address _target = _getTarget(address(_vaultAdapter));
+        address _target = _getTarget(address(_vaultAdapter), 0);
         IERC7540 _metawallet = IERC7540(_target);
 
         IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
@@ -417,9 +418,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             IMinimalSmartAccount(registry.getAdapter(address(_proposal.vault), _proposal.asset));
 
         address _kMinterAdapterAddr = address(_kMinterAdapter);
-        address _targetMetawallet = _getTarget(_kMinterAdapterAddr);
+        address _targetMetawallet = _getTarget(_kMinterAdapterAddr, 0);
         IERC7540 _metawallet = IERC7540(_targetMetawallet);
-        address _targetCustodial = _getTarget(address(_vaultAdapter));
+        address _targetCustodial = _getTarget(address(_vaultAdapter), 1);
         int256 _netted = int256(_proposal.netted);
 
         if (_proposal.netted == 0) {
@@ -771,12 +772,18 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         }
     }
 
-    /// @notice returns the target address of a given adapter
+    /// @notice returns the target address of a given adapter matching the expected type
     /// @param _adapter the adapter address
-    /// @return _target the target of a given adapter (metawallet)
-    function _getTarget(address _adapter) internal view returns (address _target) {
+    /// @param _expectedType the expected target type (0 = METAWALLET, 1 = CUSTODIAL)
+    /// @return _target the target of a given adapter matching the expected type
+    function _getTarget(address _adapter, uint8 _expectedType) internal view returns (address _target) {
         address[] memory _targets = registry.getExecutorTargets(_adapter);
-        _target = _targets[0];
+        for (uint256 i = 0; i < _targets.length; i++) {
+            if (registry.getTargetType(_targets[i]) == _expectedType) {
+                return _targets[i];
+            }
+        }
+        revert(KSETTLER_INVALID_TARGET_TYPE);
     }
 
     /*//////////////////////////////////////////////////////////////
