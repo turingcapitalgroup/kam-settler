@@ -356,6 +356,24 @@ contract CustodialVaultTest is BaseVaultTest {
         settler.finaliseCustodialSettlement(proposalId);
     }
 
+    /// @notice Test that closeVaultBatch reverts when called on a DN vault
+    function test_custodial_closeVaultBatch_reverts_on_dn_vault() public {
+        (bytes32 batchId,,,) = dnVault.getCurrentBatchInfo();
+
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS7"));
+        settler.closeVaultBatch(address(dnVault), batchId, true);
+    }
+
+    /// @notice Test that closeVaultBatch reverts when called on the kMinter
+    function test_custodial_closeVaultBatch_reverts_on_minter() public {
+        bytes32 batchId = minter.getBatchId(tokens.usdc);
+
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS7"));
+        settler.closeVaultBatch(address(minter), batchId, true);
+    }
+
     /// @notice Test that finaliseCustodialSettlement reverts on a cancelled (non-executed) proposal
     function test_custodial_finaliseCustodialSettlement_reverts_cancelled_proposal() public {
         uint256 depositAmount = 100e6;

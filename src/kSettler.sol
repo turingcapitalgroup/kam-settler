@@ -381,6 +381,12 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
+        uint8 _vaultType = registry.getVaultType(_vault);
+        require(
+            _vaultType != uint8(IRegistryBase.VaultType.MINTER) && _vaultType != uint8(IRegistryBase.VaultType.DN),
+            KSETTLER_INVALID_VAULT_TYPE
+        );
+
         IkStakingVault(_vault).closeBatch(_batchId, _create);
         _unlockReentrant();
     }
