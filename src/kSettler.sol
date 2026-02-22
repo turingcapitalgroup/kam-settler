@@ -21,7 +21,8 @@ import {
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
     KSETTLER_INSUFFICIENT_BALANCE,
-    KSETTLER_INVALID_VAULT_TYPE
+    KSETTLER_INVALID_VAULT_TYPE,
+    KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
@@ -394,6 +395,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         _checkRoles(RELAYER_ROLE);
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
+
+        require(kAssetRouter.isProposalExecuted(_proposalId), KSETTLER_PROPOSAL_NOT_EXECUTED);
 
         // Only custodial vaults (Alpha, Beta, etc.) can use finaliseCustodialSettlement
         uint8 _vaultType = registry.getVaultType(_proposal.vault);
