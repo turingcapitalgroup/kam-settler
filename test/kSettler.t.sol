@@ -268,7 +268,7 @@ contract kSettlerTest is BaseVaultTest {
     function test_settler_delta_neutral_kminter_profit() public {
         _setFeesToZero();
         _disableProfitDistribution();
-        uint256 metaVaultProfit = 200e6;
+        uint256 metaWalletProfit = 200e6;
         uint256 depositAmount = 50e6;
         test_settler_kminter_netted_positive();
         vm.startPrank(users.alice);
@@ -276,7 +276,7 @@ contract kSettlerTest is BaseVaultTest {
         bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
 
-        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
         uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
@@ -298,7 +298,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.prank(users.alice);
         requestId = vault.requestStake(users.alice, users.alice, depositAmount);
 
-        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
         _acceptAndExecute(proposalId);
@@ -312,7 +312,7 @@ contract kSettlerTest is BaseVaultTest {
 
         assertApproxEqAbs(vault.convertToAssets(gotShares), depositAmount, 1);
 
-        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
 
         uint256 sharePriceBefore = vault.sharePrice();
         proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -392,7 +392,7 @@ contract kSettlerTest is BaseVaultTest {
         uint16 insuranceBps = 1000;
         _setupProfitDistribution(insuranceBps, 0);
 
-        uint256 metaVaultProfit = 200e6;
+        uint256 metaWalletProfit = 200e6;
         uint256 depositAmount = 100e6;
 
         test_settler_kminter_netted_positive();
@@ -414,7 +414,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.stopPrank();
 
         (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
         (, address insurance,,) = registry.getSettlementConfig();
@@ -456,7 +456,7 @@ contract kSettlerTest is BaseVaultTest {
         uint16 treasuryBps = 2000;
         _setupProfitDistribution(0, treasuryBps);
 
-        uint256 metaVaultProfit = 200e6;
+        uint256 metaWalletProfit = 200e6;
         uint256 depositAmount = 100e6;
 
         test_settler_kminter_netted_positive();
@@ -478,7 +478,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.stopPrank();
 
         (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
         (address treasury,,,) = registry.getSettlementConfig();
@@ -520,7 +520,7 @@ contract kSettlerTest is BaseVaultTest {
         uint16 treasuryBps = 2000;
         _setupProfitDistribution(insuranceBps, treasuryBps);
 
-        uint256 metaVaultProfit = 5000e6;
+        uint256 metaWalletProfit = 5000e6;
         uint256 depositAmount = 100e6;
 
         test_settler_kminter_netted_positive();
@@ -542,7 +542,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.stopPrank();
 
         (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
         (address treasury, address insurance,,) = registry.getSettlementConfig();
@@ -595,7 +595,7 @@ contract kSettlerTest is BaseVaultTest {
         _setFeesToZero();
         _disableProfitDistribution();
 
-        uint256 metaVaultProfit = 200e6;
+        uint256 metaWalletProfit = 200e6;
         uint256 depositAmount = 100e6;
 
         test_settler_kminter_netted_positive();
@@ -617,7 +617,7 @@ contract kSettlerTest is BaseVaultTest {
         vm.stopPrank();
 
         (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
         uint256 dnAdapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
@@ -662,7 +662,7 @@ contract kSettlerTest is BaseVaultTest {
         uint16 insuranceBps = 1000;
         _setupProfitDistribution(insuranceBps, 0);
 
-        uint256 metaVaultProfit = 200e6;
+        uint256 metaWalletProfit = 200e6;
         uint256 depositAmount = 100e6;
 
         // Setup: first do a kMinter batch
@@ -688,7 +688,7 @@ contract kSettlerTest is BaseVaultTest {
 
         // Mint profit to metawallet
         (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaVaultProfit));
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
         // Close batch - this should distribute profit to insurance
@@ -767,7 +767,7 @@ contract kSettlerTest is BaseVaultTest {
         // Cast registry to IExecutionGuardian to access setAllowedSelector
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
 
-        // Allow insurance to call requestRedeem and withdraw on the metawallet (targetType = 0 for METAVAULT)
+        // Allow insurance to call requestRedeem and withdraw on the metawallet (targetType = 0 for METAWALLET)
         guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, requestRedeemSelector, true);
         guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, withdrawSelector, true);
 

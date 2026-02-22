@@ -30,7 +30,7 @@ contract kSettlerHandler is BaseHandler {
     IkAssetRouter assetRouter;
     IVaultAdapter minterAdapter;
     IVaultAdapter dnVaultAdapter;
-    IERC7540 metavault;
+    IERC7540 metawallet;
 
     // State
     address token;
@@ -96,7 +96,7 @@ contract kSettlerHandler is BaseHandler {
         address _assetRouter,
         address _minterAdapter,
         address _dnVaultAdapter,
-        address _metavault,
+        address _metawallet,
         address _token,
         address _kToken,
         address _relayer,
@@ -112,7 +112,7 @@ contract kSettlerHandler is BaseHandler {
         assetRouter = IkAssetRouter(_assetRouter);
         minterAdapter = IVaultAdapter(_minterAdapter);
         dnVaultAdapter = IVaultAdapter(_dnVaultAdapter);
-        metavault = IERC7540(_metavault);
+        metawallet = IERC7540(_metawallet);
         token = _token;
         kToken = _kToken;
         relayer = _relayer;
@@ -378,7 +378,7 @@ contract kSettlerHandler is BaseHandler {
             } else {
                 dnExpectedSharePrice = shares.fullMulDiv(dnExpectedTotalAssets, totalSupply_);
             }
-            dnActualAdapterBalance = metavault.balanceOf(address(dnVaultAdapter));
+            dnActualAdapterBalance = metawallet.balanceOf(address(dnVaultAdapter));
             dnActualSharePrice = dnVault.sharePrice();
 
             // Update minter adapter tracking
@@ -491,15 +491,15 @@ contract kSettlerHandler is BaseHandler {
         }
 
         // Use settler to close and propose DN vault batch
-        uint256 _metavaultTotalAssets = token.balanceOf(address(metavault));
-        bytes32 _rootHash = keccak256(abi.encodePacked(address(metavault), _metavaultTotalAssets));
-        try settler.closeAndProposeDNVaultBatch(token, _metavaultTotalAssets, _rootHash) returns (bytes32 proposalId) {
+        uint256 _metawalletTotalAssets = token.balanceOf(address(metawallet));
+        bytes32 _rootHash = keccak256(abi.encodePacked(address(metawallet), _metawalletTotalAssets));
+        try settler.closeAndProposeDNVaultBatch(token, _metawalletTotalAssets, _rootHash) returns (bytes32 proposalId) {
             pendingDNSettlementProposals.add(proposalId);
             pendingDNUnsettledBatches.add(batchId);
 
             // Update adapter balance tracking
-            dnActualAdapterBalance = metavault.balanceOf(address(dnVaultAdapter));
-            uint256 minterAdapterMetavaultBalance = metavault.balanceOf(address(minterAdapter));
+            dnActualAdapterBalance = metawallet.balanceOf(address(dnVaultAdapter));
+            uint256 minterAdapterMetawalletBalance = metawallet.balanceOf(address(minterAdapter));
             minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
         } catch {
             // Batch close failed - skip
@@ -598,8 +598,8 @@ contract kSettlerHandler is BaseHandler {
         amount = bound(amount, 0, dnActualTotalAssets);
         if (amount == 0) return;
         // Simulate yield in metawallet
-        uint256 newBalance = token.balanceOf(address(metavault)) + amount;
-        deal(token, address(metavault), newBalance);
+        uint256 newBalance = token.balanceOf(address(metawallet)) + amount;
+        deal(token, address(metawallet), newBalance);
         totalYieldInBatch[dnVault.getBatchId()] += int256(amount);
     }
 
@@ -607,7 +607,7 @@ contract kSettlerHandler is BaseHandler {
         int256 maxLoss = int256(dnExpectedAdapterTotalAssets) + totalYieldInBatch[dnVault.getBatchId()];
         if (maxLoss <= 0) return;
 
-        uint256 currentBalance = token.balanceOf(address(metavault));
+        uint256 currentBalance = token.balanceOf(address(metawallet));
         uint256 maxLossUint = uint256(maxLoss);
         if (maxLossUint > currentBalance) {
             maxLossUint = currentBalance;
@@ -617,7 +617,7 @@ contract kSettlerHandler is BaseHandler {
         if (amount == 0) return;
 
         uint256 newBalance = currentBalance - amount;
-        deal(token, address(metavault), newBalance);
+        deal(token, address(metawallet), newBalance);
         totalYieldInBatch[dnVault.getBatchId()] -= int256(amount);
     }
 
