@@ -7,7 +7,8 @@ import { OptimizedReentrancyGuardTransient } from "kam/src/vendor/solady/utils/O
 
 // Internal Libraries
 import { ExecutionDataLibrary } from "./libraries/ExecutionDataLibrary.sol";
-import { OptimizedFixedPointMathLib, VaultMathLibrary } from "./libraries/VaultMathLibrary.sol";
+import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
+import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
@@ -36,7 +37,7 @@ import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalS
 ///      including rebalancing, fee calculations, and asset netting operations.
 ///      It manages the interaction between kMinter, vault adapters, and meta-wallets.
 contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardTransient {
-    using VaultMathLibrary for IkStakingVault;
+    using VaultMathLib for IkStakingVault;
     using OptimizedFixedPointMathLib for int256;
     using ExecutionLib for bytes;
 

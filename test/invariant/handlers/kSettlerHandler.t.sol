@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
+import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { BaseHandler } from "kam/test/invariant/handlers/BaseHandler.t.sol";
 import { AddressSet, LibAddressSet } from "kam/test/invariant/helpers/AddressSet.sol";
 import { Bytes32Set, LibBytes32Set } from "kam/test/invariant/helpers/Bytes32Set.sol";
-import { VaultMathLib } from "kam/test/invariant/helpers/VaultMathLib.sol";
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
