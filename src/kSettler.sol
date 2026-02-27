@@ -867,6 +867,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         if (_insuranceDeficitAssets > 0 && _insurance != address(0)) {
             uint256 _insuranceDeficitShares = _metawallet.convertToShares(_insuranceDeficitAssets);
+            // Adjust for dust (consistent with all other asset-to-share conversions)
+            while (_metawallet.convertToAssets(_insuranceDeficitShares) < _insuranceDeficitAssets) {
+                _insuranceDeficitShares += 1;
+            }
             _insuranceShares = _remainingShares < _insuranceDeficitShares ? _remainingShares : _insuranceDeficitShares;
 
             if (_insuranceShares > 0) {

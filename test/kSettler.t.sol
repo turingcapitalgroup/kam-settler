@@ -439,6 +439,9 @@ contract kSettlerTest is BaseVaultTest {
         }
 
         uint256 insuranceDeficitShares = erc7540USDC.convertToShares(insuranceDeficitAssets);
+        while (erc7540USDC.convertToAssets(insuranceDeficitShares) < insuranceDeficitAssets) {
+            insuranceDeficitShares += 1;
+        }
         uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -568,6 +571,9 @@ contract kSettlerTest is BaseVaultTest {
         }
 
         uint256 insuranceDeficitShares = erc7540USDC.convertToShares(insuranceDeficitAssets);
+        while (erc7540USDC.convertToAssets(insuranceDeficitShares) < insuranceDeficitAssets) {
+            insuranceDeficitShares += 1;
+        }
         uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
 
         uint256 remainingSharesAfterInsurance = profitShares - expectedInsuranceShares;
