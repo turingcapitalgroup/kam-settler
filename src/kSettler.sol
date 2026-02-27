@@ -252,7 +252,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                 // Transfer remaining shares to vault adapter if any
                 if (_sharesToVaultAdapter > 0) {
                     _executeRebalanceTransfer(
-                        false, // isPositive = false means transfer FROM kMinter TO vaultAdapter
+                        false, // toKMinterAdapter = false means transfer FROM kMinter TO vaultAdapter
                         _metawallet,
                         _kMinterAdapter,
                         _vaultAdapter,
@@ -578,13 +578,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
     /// @notice Executes the netted transfer between adapters
     /// @dev Transfers shares between kMinter and DN vault adapters based on netting direction
-    /// @param _isPositive Whether the netting is positive (deposited > requested)
+    /// @param _toVaultAdapter Whether to transfer shares to the DN vault adapter (true) or to kMinter adapter (false)
     /// @param _metawallet Address of the delta-neutral meta-wallet
     /// @param _kMinterAdapter Address of the kMinter adapter
     /// @param _vaultAdapter Address of the DN vault adapter
     /// @param _nettedShares Amount of shares to transfer
     function _executeNettedTransfer(
-        bool _isPositive,
+        bool _toVaultAdapter,
         address _metawallet,
         address _kMinterAdapter,
         address _vaultAdapter,
@@ -594,7 +594,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     {
         Execution[] memory _executions;
 
-        if (_isPositive) {
+        if (_toVaultAdapter) {
             // Transfer from kMinter adapter to DN vault adapter
             _executions = ExecutionDataLibrary.getTransferFromExecutionData(
                 _metawallet, _kMinterAdapter, _vaultAdapter, _nettedShares
@@ -644,13 +644,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
     /// @notice Executes the rebalancing transfer between adapters
     /// @dev Transfers shares between adapters to achieve proper balance
-    /// @param _isPositive Whether to transfer to kMinter adapter (true) or from it (false)
+    /// @param _toKMinterAdapter Whether to transfer to kMinter adapter (true) or to DN vault adapter (false)
     /// @param _metawallet Address of the delta-neutral meta-wallet
     /// @param _kMinterAdapter Address of the kMinter adapter
     /// @param _vaultAdapter Address of the DN vault adapter
     /// @param _shareValue Amount of shares to transfer
     function _executeRebalanceTransfer(
-        bool _isPositive,
+        bool _toKMinterAdapter,
         IERC7540 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _vaultAdapter,
@@ -660,7 +660,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     {
         Execution[] memory _executions;
 
-        if (_isPositive) {
+        if (_toKMinterAdapter) {
             // Transfer to kMinter adapter (from DN vault adapter)
             _executions = ExecutionDataLibrary.getTransferExecutionData(
                 address(_metawallet), address(_kMinterAdapter), _shareValue
