@@ -24,6 +24,7 @@ import {
     KSETTLER_INSUFFICIENT_BALANCE,
     KSETTLER_INVALID_TARGET_TYPE,
     KSETTLER_INVALID_VAULT_TYPE,
+    KSETTLER_MISSING_ALLOWANCE,
     KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
 import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
@@ -218,6 +219,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
         address _target = _getTarget(address(_vaultAdapter), 0);
         IERC7540 _metawallet = IERC7540(_target);
+
+        // Verify kMinterAdapter has approved vaultAdapter to transferFrom MetaWallet shares.
+        // This approval is an external deployment invariant that must be set by a MANAGER.
+        require(_metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter)) > 0, KSETTLER_MISSING_ALLOWANCE);
 
         IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
 
