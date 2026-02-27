@@ -275,9 +275,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             }
         }
 
-        // Calculate and process fees
-        (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance) =
-            _fees(_vault, _vaultAdapter, _metawallet);
+        // Calculate and process fees (skip when no shareholders exist to absorb the cost)
+        uint64 _lastFeesChargedDateManagement;
+        uint64 _lastFeesChargedDatePerformance;
+        if (_vault.totalSupply() != 0) {
+            (_lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
+                _fees(_vault, _vaultAdapter, _metawallet);
+        }
 
         // Calculate final asset data for settlement
         AssetData memory _assetData =
