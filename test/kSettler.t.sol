@@ -10,21 +10,23 @@ import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
+import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
 import { MinimalSmartAccount } from "minimal-smart-account/MinimalSmartAccount.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
 import { kSettler } from "src/kSettler.sol";
+import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
-contract kSettlerTest is BaseVaultTest {
+contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     using SafeTransferLib for address;
     using OptimizedFixedPointMathLib for int256;
 
     kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
-    function setUp() public override {
+    function setUp() public override(BaseVaultTest, DeploymentBaseTest) {
         // Point to kam-v1's deployments folder which has the complete config
         vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
         DeploymentBaseTest.setUp();
@@ -40,6 +42,8 @@ contract kSettlerTest is BaseVaultTest {
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
         settler = kSettler(deployment.settler);
+
+        _deployAndSwapMetaWallet(address(settler));
 
         vm.startPrank(users.admin);
         vault = IkStakingVault(address(dnVault));
@@ -245,7 +249,7 @@ contract kSettlerTest is BaseVaultTest {
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -259,7 +263,7 @@ contract kSettlerTest is BaseVaultTest {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
 
         vm.prank(users.alice);
         vault.claimUnstakedAssets(requestId);
@@ -372,6 +376,13 @@ contract kSettlerTest is BaseVaultTest {
         vm.stopPrank();
     }
 
+    function _syncMetaWalletTotalAssets() internal {
+        uint256 newTotalAssets = tokens.usdc.balanceOf(address(erc7540USDC));
+        bytes32 rootHash = keccak256(abi.encodePacked(address(erc7540USDC), newTotalAssets));
+        vm.prank(address(settler));
+        IVaultModule(address(erc7540USDC)).settleTotalAssets(newTotalAssets, rootHash);
+    }
+
     function _setupProfitDistribution(uint16 insuranceBps, uint16 treasuryBps) internal {
         vm.stopPrank();
         vm.startPrank(users.admin);
@@ -417,6 +428,8 @@ contract kSettlerTest is BaseVaultTest {
             tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
+        _syncMetaWalletTotalAssets();
+
         (, address insurance,,) = registry.getSettlementConfig();
         uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
 
@@ -451,7 +464,7 @@ contract kSettlerTest is BaseVaultTest {
 
         assertEq(insuranceSharesReceived, expectedInsuranceShares);
 
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
     }
 
     function test_settler_profit_distribution_to_treasury() public {
@@ -484,6 +497,8 @@ contract kSettlerTest is BaseVaultTest {
             tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
+        _syncMetaWalletTotalAssets();
+
         (address treasury,,,) = registry.getSettlementConfig();
         uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
 
@@ -510,11 +525,7 @@ contract kSettlerTest is BaseVaultTest {
 
         assertEq(treasurySharesReceived, expectedTreasuryShares);
 
-        // Large yields require guardian approval before execution
-        vm.prank(users.guardian);
-        assetRouter.acceptProposal(proposalId);
-
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
     }
 
     function test_settler_profit_distribution_insurance_and_treasury() public {
@@ -547,6 +558,8 @@ contract kSettlerTest is BaseVaultTest {
         (bool success,) =
             tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
+
+        _syncMetaWalletTotalAssets();
 
         (address treasury, address insurance,,) = registry.getSettlementConfig();
         uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
@@ -590,11 +603,7 @@ contract kSettlerTest is BaseVaultTest {
         assertEq(insuranceSharesReceived, expectedInsuranceShares);
         assertEq(treasurySharesReceived, expectedTreasuryShares);
 
-        // Large yields require guardian approval before execution
-        vm.prank(users.guardian);
-        assetRouter.acceptProposal(proposalId);
-
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
     }
 
     function test_settler_dn_batch_all_profit_distributed() public {
@@ -626,6 +635,8 @@ contract kSettlerTest is BaseVaultTest {
             tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
         require(success);
 
+        _syncMetaWalletTotalAssets();
+
         uint256 dnAdapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
 
         uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
@@ -656,11 +667,7 @@ contract kSettlerTest is BaseVaultTest {
         uint256 profitShareReceived = vaultAdapterSharesReceived - nettingShares;
         assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, 2);
 
-        // Large yields require guardian approval before execution
-        vm.prank(users.guardian);
-        assetRouter.acceptProposal(proposalId);
-
-        assetRouter.executeSettleBatch(proposalId);
+        _acceptAndExecute(proposalId);
     }
 
     function test_settler_liquidate_insurance() public {

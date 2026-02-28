@@ -14,18 +14,19 @@ import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { IkAssetRouter, IkSettler } from "src/interfaces/IkSettler.sol";
 import { kSettler } from "src/kSettler.sol";
+import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
 /// @title CustodialVaultTest
 /// @notice Tests for alpha and beta vault (custodial) settlement flows
 /// @dev Tests the full settlement flow: closeBatch -> proposeSettleBatch -> executeSettlement -> mockWallet transfer ->
 /// finaliseCustodialSettlement
-contract CustodialVaultTest is BaseVaultTest {
+contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
     using SafeTransferLib for address;
 
     kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
-    function setUp() public override {
+    function setUp() public override(BaseVaultTest, DeploymentBaseTest) {
         // Point to kam-v1's deployments folder which has the complete config
         vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
         DeploymentBaseTest.setUp();
@@ -43,6 +44,8 @@ contract CustodialVaultTest is BaseVaultTest {
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
         settler = kSettler(deployment.settler);
+
+        _deployAndSwapMetaWallet(address(settler));
 
         vm.startPrank(users.admin);
         vault = IkStakingVault(address(alphaVault));
