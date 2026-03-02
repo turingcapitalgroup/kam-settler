@@ -105,23 +105,11 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         deal(tokens.usdc, address(erc7540USDC), 0);
 
-        Execution[] memory executions3 = new Execution[](2);
+        Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
             target: address(erc7540USDC),
             value: 0,
-            callData: abi.encodeWithSignature(
-                "requestDeposit(uint256,address,address)",
-                balance,
-                address(minterAdapterUSDC),
-                address(minterAdapterUSDC)
-            )
-        });
-        executions3[1] = Execution({
-            target: address(erc7540USDC),
-            value: 0,
-            callData: abi.encodeWithSignature(
-                "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
-            )
+            callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });
 
         bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);

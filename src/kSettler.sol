@@ -27,8 +27,8 @@ import {
     KSETTLER_MISSING_ALLOWANCE,
     KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
-import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
 import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
@@ -139,7 +139,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Get adapter and metawallet
         IMinimalSmartAccount _adapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
         address _target = _getTarget(address(_adapter), 0);
-        IERC7540 _metawallet = IERC7540(_target);
+        IERC4626 _metawallet = IERC4626(_target);
 
         // NOTE: Profit distribution is NOT done here. It happens in DN vault batch settlement
         // via closeAndProposeDNVaultBatch. The kMinter batch only handles kToken minting/burning.
@@ -161,15 +161,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             uint256 _shares = _metawallet.convertToShares(_abs);
 
             // Money should always be idle if not revert and divest 1st.
-            Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
-                _target, address(_adapter), address(_adapter), _shares, _abs
-            );
+            Execution[] memory _executions =
+                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _shares);
 
             _executeAdapterCall(_adapter, _executions);
         } else if (_nettedAmount > 0) {
-            Execution[] memory _execution = ExecutionDataLibrary.getDepositExecutionData(
-                _target, address(_adapter), address(_adapter), uint256(_nettedAmount)
-            );
+            Execution[] memory _execution =
+                ExecutionDataLibrary.getDepositExecutionData(_target, address(_adapter), uint256(_nettedAmount));
 
             _executeAdapterCall(_adapter, _execution);
         }
@@ -218,7 +216,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             IkStakingVault(registry.getVaultByAssetAndType(_asset, uint8(IRegistryBase.VaultType.DN)));
         IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
         address _target = _getTarget(address(_vaultAdapter), 0);
-        IERC7540 _metawallet = IERC7540(_target);
+        IERC4626 _metawallet = IERC4626(_target);
 
         // Verify kMinterAdapter has approved vaultAdapter to transferFrom MetaWallet shares.
         // This approval is an external deployment invariant that must be set by a MANAGER.
@@ -334,7 +332,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         }
         require(_metawalletAddr != address(0), KSETTLER_ADDRESS_ZERO);
 
-        IERC7540 _metawallet = IERC7540(_metawalletAddr);
+        IERC4626 _metawallet = IERC4626(_metawalletAddr);
 
         // Get insurance's share balance
         uint256 _shares = _metawallet.balanceOf(_insurance);
@@ -345,10 +343,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         uint256 _assetsValue = _metawallet.convertToAssets(_shares);
 
-        // Build executions for requestRedeem + withdraw
-        Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
-            _metawalletAddr, _insurance, _insurance, _shares, _assetsValue
-        );
+        // Build execution for redeem
+        Execution[] memory _executions =
+            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _shares);
 
         // Execute through insurance smart account
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
@@ -429,7 +426,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         address _kMinterAdapterAddr = address(_kMinterAdapter);
         address _targetMetawallet = _getTarget(_kMinterAdapterAddr, 0);
-        IERC7540 _metawallet = IERC7540(_targetMetawallet);
+        IERC4626 _metawallet = IERC4626(_targetMetawallet);
         address _targetCustodial = _getTarget(address(_vaultAdapter), 1);
         int256 _netted = int256(_proposal.netted);
 
@@ -441,12 +438,12 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             uint256 _nettedAbs = uint256(_netted);
             uint256 _shares = _metawallet.convertToShares(_nettedAbs);
 
-            // Execute redemption request through the kMinter adapter
+            // Execute redemption through the kMinter adapter
             Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
-                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares, _nettedAbs
+                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
             );
 
-            // requestRedeem + withdraw assets from metawallet using kMinter adapter
+            // redeem assets from metawallet using kMinter adapter
             _executeAdapterCall(_kMinterAdapter, _executions);
 
             require(
@@ -457,9 +454,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _nettedAbs);
             _executeAdapterCall(_kMinterAdapter, _executions);
         } else {
-            Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
-                _targetMetawallet, _kMinterAdapterAddr, _kMinterAdapterAddr, _netted.abs()
-            );
+            Execution[] memory _executions =
+                ExecutionDataLibrary.getDepositExecutionData(_targetMetawallet, _kMinterAdapterAddr, _netted.abs());
 
             _executeAdapterCall(_kMinterAdapter, _executions);
         }
@@ -514,7 +510,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _batchInfo Struct containing batch information
     /// @return _assetData Struct containing calculated asset data
     function _calculateAssetData(
-        IERC7540 _metawallet,
+        IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _vaultAdapter,
         IkStakingVault _vault,
@@ -552,7 +548,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         uint256 _dnAdapterAssets,
         uint256 _deposited,
         uint256 _pendingShares,
-        IERC7540 _dnMetaWallet,
+        IERC4626 _dnMetaWallet,
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _dnVaultAdapter,
         IkStakingVault _vault
@@ -626,7 +622,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @return Depeg value: positive = surplus/profit, negative = deficit/loss
     function _getDepeg(
         IMinimalSmartAccount _kMinterAdapter,
-        IERC7540 _dnMetaWallet,
+        IERC4626 _dnMetaWallet,
         address _asset
     )
         internal
@@ -660,7 +656,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _shareValue Amount of shares to transfer
     function _executeRebalanceTransfer(
         bool _toKMinterAdapter,
-        IERC7540 _metawallet,
+        IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _vaultAdapter,
         uint256 _shareValue
@@ -694,7 +690,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     function _fees(
         IkStakingVault _vault,
         IMinimalSmartAccount _dnVaultAdapter,
-        IERC7540 _dnMetaWallet
+        IERC4626 _dnMetaWallet
     )
         internal
         returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
@@ -719,7 +715,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
     function _calculateFees(
         IkStakingVault _vault,
-        IERC7540 _dnMetaWallet
+        IERC4626 _dnMetaWallet
     )
         internal
         view
@@ -757,7 +753,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _dnVaultAdapter Address of the DN vault adapter
     /// @param _feeShares Number of fee shares to transfer
     function _executeFeeTransfer(
-        IERC7540 _dnMetaWallet,
+        IERC4626 _dnMetaWallet,
         IMinimalSmartAccount _dnVaultAdapter,
         uint256 _feeShares
     )
@@ -807,7 +803,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _asset The underlying asset address (e.g., USDC)
     /// @return _deficitAssets Assets still needed by insurance (0 if target met)
     function _getInsuranceDeficit(
-        IERC7540 _metawallet,
+        IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
         address _asset
     )
@@ -842,7 +838,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _asset The underlying asset address (e.g., USDC)
     /// @return _sharesToVaultAdapter Shares that should be transferred to vault adapter
     function _distributeProfitShares(
-        IERC7540 _metawallet,
+        IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
         uint256 _profitAssets,
         bool _isVaultSettlement,
@@ -909,7 +905,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _recipient The recipient address (insurance or treasury)
     /// @param _shares Number of shares to transfer
     function _executeShareTransfer(
-        IERC7540 _metawallet,
+        IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
         address _recipient,
         uint256 _shares

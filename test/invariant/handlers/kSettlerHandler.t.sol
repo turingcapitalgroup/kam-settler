@@ -8,12 +8,12 @@ import { Bytes32Set, LibBytes32Set } from "kam/test/invariant/helpers/Bytes32Set
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
-import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkMinter } from "kam/src/interfaces/IkMinter.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { BaseVaultTypes } from "kam/src/kStakingVault/types/BaseVaultTypes.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { kSettler } from "src/kSettler.sol";
 
 contract kSettlerHandler is BaseHandler {
@@ -30,7 +30,7 @@ contract kSettlerHandler is BaseHandler {
     IkAssetRouter assetRouter;
     IVaultAdapter minterAdapter;
     IVaultAdapter dnVaultAdapter;
-    IERC7540 metawallet;
+    IERC4626 metawallet;
 
     // State
     address token;
@@ -112,7 +112,7 @@ contract kSettlerHandler is BaseHandler {
         assetRouter = IkAssetRouter(_assetRouter);
         minterAdapter = IVaultAdapter(_minterAdapter);
         dnVaultAdapter = IVaultAdapter(_dnVaultAdapter);
-        metawallet = IERC7540(_metawallet);
+        metawallet = IERC4626(_metawallet);
         token = _token;
         kToken = _kToken;
         relayer = _relayer;

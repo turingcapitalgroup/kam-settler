@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
+import { IERC20 } from "forge-std/interfaces/IERC20.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
-import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { DeploymentBaseTest } from "kam/test/utils/DeploymentBaseTest.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
 
 /// @title DeployMetaWallet
@@ -39,7 +40,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         // Retrieve ERC20ExecutionValidator BEFORE swapping selectors (it gets deleted during USDC reorder)
         ERC20ExecutionValidator pc = ERC20ExecutionValidator(
             IExecutionGuardian(address(registry))
-                .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, IERC7540.approve.selector)
+                .getExecutionValidator(address(minterAdapterUSDC), tokens.usdc, IERC20.approve.selector)
         );
 
         // --- 2. Registry executor permissions ---
@@ -78,7 +79,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         // Initialize the vault module
         IVaultModule(proxy).initializeVault(tokens.usdc, "MetaWallet USDC", "mwUSDC");
 
-        // WHITELISTED_ROLE (2) – adapters that call requestDeposit
+        // WHITELISTED_ROLE (2) – adapters that call deposit/redeem
         _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(minterAdapterUSDC), 2));
         _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(DNVaultAdapterUSDC), 2));
         _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(ALPHAVaultAdapterUSDC), 2));
@@ -100,28 +101,22 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
     function _swapAllowedSelectors(address real, address mock, address validator) private {
         IExecutionGuardian g = IExecutionGuardian(address(registry));
 
-        bytes4 approveSel = IERC7540.approve.selector;
-        bytes4 transferSel = IERC7540.transfer.selector;
-        bytes4 transferFromSel = IERC7540.transferFrom.selector;
-        bytes4 reqDepSel = IERC7540.requestDeposit.selector;
-        bytes4 depSel = bytes4(abi.encodeWithSignature("deposit(uint256,address,address)"));
-        bytes4 reqRedSel = IERC7540.requestRedeem.selector;
-        bytes4 redeemSel = IERC7540.redeem.selector;
-        bytes4 withdrawSel = IERC7540.withdraw.selector;
+        bytes4 approveSel = IERC20.approve.selector;
+        bytes4 transferSel = IERC20.transfer.selector;
+        bytes4 transferFromSel = IERC20.transferFrom.selector;
+        bytes4 depSel = IERC4626.deposit.selector;
+        bytes4 redeemSel = IERC4626.redeem.selector;
 
         vm.startPrank(users.admin);
 
         // ---- A. ADD real MetaWallet selectors ----
 
-        // kMinterAdapter – full ERC7540 operations
+        // kMinterAdapter – ERC4626 operations
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, approveSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferFromSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, reqDepSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, depSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, reqRedSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, redeemSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, withdrawSel, true);
 
         // DNVaultAdapter
         g.setAllowedSelector(address(DNVaultAdapterUSDC), real, 0, approveSel, true);
@@ -144,11 +139,8 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, approveSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferFromSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, reqDepSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, depSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, reqRedSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, redeemSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, withdrawSel, false);
 
         // DNVaultAdapter mock
         g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, 0, approveSel, false);
@@ -186,9 +178,9 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
     }
 
     function _setValidatorsAndParamChecker(address real, ERC20ExecutionValidator pc) private {
-        bytes4 approveSel = IERC7540.approve.selector;
-        bytes4 transferSel = IERC7540.transfer.selector;
-        bytes4 transferFromSel = IERC7540.transferFrom.selector;
+        bytes4 approveSel = IERC20.approve.selector;
+        bytes4 transferSel = IERC20.transfer.selector;
+        bytes4 transferFromSel = IERC20.transferFrom.selector;
 
         IExecutionGuardian g = IExecutionGuardian(address(registry));
 

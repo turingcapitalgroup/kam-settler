@@ -3,13 +3,13 @@ pragma solidity 0.8.30;
 
 import { console2 as console } from "forge-std/console2.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
-import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
 import { MinimalSmartAccount } from "minimal-smart-account/MinimalSmartAccount.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
@@ -98,23 +98,11 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
 
         deal(tokens.usdc, address(erc7540USDC), 0);
-        Execution[] memory executions3 = new Execution[](2);
+        Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
             target: address(erc7540USDC),
             value: 0,
-            callData: abi.encodeWithSignature(
-                "requestDeposit(uint256,address,address)",
-                balance,
-                address(minterAdapterUSDC),
-                address(minterAdapterUSDC)
-            )
-        });
-        executions3[1] = Execution({
-            target: address(erc7540USDC),
-            value: 0,
-            callData: abi.encodeWithSignature(
-                "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
-            )
+            callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });
 
         bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);
@@ -716,7 +704,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         // Insurance should have received some shares
         assertGt(insuranceSharesBefore, 0);
 
-        // Setup insurance account permissions for requestRedeem and redeem
+        // Setup insurance account permissions for redeem
         _setupInsurancePermissions(insurance);
 
         // Liquidate insurance - convert shares to underlying assets
@@ -774,15 +762,13 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.startPrank(users.admin);
 
         // Set up insurance executor permissions for metawallet operations
-        bytes4 requestRedeemSelector = IERC7540.requestRedeem.selector;
-        bytes4 withdrawSelector = IERC7540.withdraw.selector;
+        bytes4 redeemSelector = IERC4626.redeem.selector;
 
         // Cast registry to IExecutionGuardian to access setAllowedSelector
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
 
-        // Allow insurance to call requestRedeem and withdraw on the metawallet (targetType = 0 for METAWALLET)
-        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, requestRedeemSelector, true);
-        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, withdrawSelector, true);
+        // Allow insurance to call redeem on the metawallet (targetType = 0 for METAWALLET)
+        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, redeemSelector, true);
 
         vm.stopPrank();
     }
