@@ -16,8 +16,9 @@ import { Execution, ExecutionLib } from "minimal-smart-account/libraries/Executi
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { kSettler } from "src/kSettler.sol";
+import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
-abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
+abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
     using SafeTransferLib for address;
 
     kSettlerHandler public settlerHandler;
@@ -48,6 +49,9 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
         settler = kSettler(deployment.settler);
+
+        // Deploy real MetaWallet and swap it in place of MockERC7540
+        _deployAndSwapMetaWallet(address(settler));
 
         // Grant roles to settler for adapter operations
         vm.prank(users.owner);

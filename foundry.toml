@@ -61,4 +61,4 @@ recursive_deps = true
 forge-std = "1.10.0"
 kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git" }
 minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git" }
-metawallet = { version = "1.0", git = "https://github.com/turingcapitalgroup/metawallet.git", rev = "142b660965f287c04151e6e9a8df56d789caea67" }
+metawallet = { version = "1.0", git = "https://github.com/turingcapitalgroup/metawallet.git" }

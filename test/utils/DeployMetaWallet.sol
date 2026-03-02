@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import { IERC20 } from "forge-std/interfaces/IERC20.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
+import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
 import { DeploymentBaseTest } from "kam/test/utils/DeploymentBaseTest.sol";
@@ -79,11 +80,11 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         // Initialize the vault module
         IVaultModule(proxy).initializeVault(tokens.usdc, "MetaWallet USDC", "mwUSDC");
 
-        // WHITELISTED_ROLE (2) – adapters that call deposit/redeem
-        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(minterAdapterUSDC), 2));
-        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(DNVaultAdapterUSDC), 2));
-        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(ALPHAVaultAdapterUSDC), 2));
-        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(BETHAVaultAdapterUSDC), 2));
+        // WHITELISTED_ROLE (_ROLE_2 = 4) – adapters that call deposit/redeem
+        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(minterAdapterUSDC), 4));
+        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(DNVaultAdapterUSDC), 4));
+        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(ALPHAVaultAdapterUSDC), 4));
+        _call(proxy, abi.encodeWithSignature("grantRoles(address,uint256)", address(BETHAVaultAdapterUSDC), 4));
 
         // MANAGER_ROLE (16) – settler calls settleTotalAssets directly
         if (_settler != address(0)) {
@@ -135,12 +136,23 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
 
         // ---- B. REMOVE mock selectors ----
 
-        // kMinterAdapter mock
+        // kMinterAdapter mock – remove ALL selectors (ERC20 + ERC4626 + ERC7540-specific)
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, approveSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferFromSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, depSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, redeemSel, false);
+        // IERC7540 selectors added by the original deployment for kMinterAdapter
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, IERC7540.requestDeposit.selector, false);
+        g.setAllowedSelector(
+            address(minterAdapterUSDC),
+            mock,
+            0,
+            bytes4(abi.encodeWithSignature("deposit(uint256,address,address)")),
+            false
+        );
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, IERC7540.requestRedeem.selector, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, IERC7540.withdraw.selector, false);
 
         // DNVaultAdapter mock
         g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, 0, approveSel, false);
