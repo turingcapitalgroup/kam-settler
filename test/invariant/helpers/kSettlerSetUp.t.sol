@@ -50,7 +50,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         );
         settler = kSettler(deployment.settler);
 
-        // Deploy real MetaWallet and swap it in place of MockERC7540
+        // Deploy real MetaWallet and swap it in place of MockERC4626
         _deployAndSwapMetaWallet(address(settler));
 
         // Grant roles to settler for adapter operations
@@ -60,7 +60,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         vm.prank(users.owner);
         DNVaultAdapterUSDC.grantRoles(address(settler), 2);
 
-        // Set up param checker to allow DNVaultAdapter as spender for erc7540USDC
+        // Set up param checker to allow DNVaultAdapter as spender for metawalletUsdc
         vm.prank(users.admin);
         paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
 
@@ -81,7 +81,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
 
         vm.startPrank(users.relayer);
 
-        // Approve USDC to erc7540USDC
+        // Approve USDC to metawalletUsdc
         Execution[] memory executions1 = new Execution[](1);
         executions1[0] = Execution({
             target: tokens.usdc,
@@ -92,7 +92,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode1, executionCalldata1);
 
-        // Approve erc7540USDC to DNVaultAdapter
+        // Approve metawalletUsdc to DNVaultAdapter
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
             target: address(erc7540USDC),

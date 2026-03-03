@@ -86,7 +86,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
     function _setupMinterAdapterDeposits() internal {
         vm.startPrank(users.relayer);
 
-        // First execution: approve USDC to erc7540USDC
+        // First execution: approve USDC to metawalletUsdc
         Execution[] memory executions1 = new Execution[](1);
         executions1[0] = Execution({
             target: tokens.usdc,
@@ -97,7 +97,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode1, executionCalldata1);
 
-        // Second execution: approve erc7540USDC to adapters
+        // Second execution: approve metawalletUsdc to adapters
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
             target: address(erc7540USDC),

@@ -136,12 +136,12 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 requestId = minter.requestBurn(tokens.usdc, users.institution, requestAmount);
         assertEq(adapterBalanceAfter - adapterBalanceBefore, depositAmount);
 
-        uint256 erc7540USDCBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
         bytes32 proposalId = _closeMinterBatch();
         assertNotEq(proposalId, bytes32(0));
-        uint256 erc7540USDCBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
 
-        assertEq(erc7540USDCBalanceAfter - erc7540USDCBalanceBefore, depositAmount - requestAmount);
+        assertEq(metawalletUsdcBalanceAfter - metawalletUsdcBalanceBefore, depositAmount - requestAmount);
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
 
@@ -171,13 +171,13 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 requestId = minter.requestBurn(tokens.usdc, users.institution, requestAmount);
         assertEq(adapterBalanceAfter - adapterBalanceBefore, depositAmount);
 
-        uint256 erc7540USDCBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
         bytes32 proposalId = _closeMinterBatch();
         assertNotEq(proposalId, bytes32(0));
 
-        uint256 erc7540USDCBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
 
-        assertEq(erc7540USDCBalanceBefore - erc7540USDCBalanceAfter, requestAmount - depositAmount);
+        assertEq(metawalletUsdcBalanceBefore - metawalletUsdcBalanceAfter, requestAmount - depositAmount);
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
 
         assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);

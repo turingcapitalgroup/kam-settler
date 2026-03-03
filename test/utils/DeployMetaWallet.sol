@@ -12,7 +12,7 @@ import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
 
 /// @title DeployMetaWallet
 /// @notice Shared helper that deploys a real MetaWallet proxy (with VaultModule) and swaps it
-///         in place of the MockERC7540 deployed by DeploymentBaseTest.
+///         in place of the MockERC4626 deployed by DeploymentBaseTest.
 /// @dev Reads pre-built artifacts from metawallet dependency to avoid remapping conflicts.
 abstract contract DeployMetaWallet is DeploymentBaseTest {
     /// @dev Deploy a contract from a pre-built artifact JSON file
@@ -26,7 +26,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
     }
 
     /// @notice Deploy a real MetaWallet + VaultModule proxy, reconfigure registry targets and
-    ///         parameter-checker, then reassign `erc7540USDC`.
+    ///         parameter-checker, then reassign `metawalletUsdc`.
     /// @param _settler Address of the kSettler contract (needs MANAGER_ROLE for settleTotalAssets)
     function _deployAndSwapMetaWallet(address _settler) internal {
         address mockAddr = address(erc7540USDC);
@@ -136,13 +136,13 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
 
         // ---- B. REMOVE mock selectors ----
 
-        // kMinterAdapter mock – remove ALL selectors (ERC20 + ERC4626 + ERC7540-specific)
+        // kMinterAdapter mock – remove ALL selectors (ERC20 + ERC4626)
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, approveSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferFromSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, depSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, redeemSel, false);
-        // IERC7540 selectors added by the original deployment for kMinterAdapter
+        // IERC4626 selectors added by the original deployment for kMinterAdapter
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, IERC7540.requestDeposit.selector, false);
         g.setAllowedSelector(
             address(minterAdapterUSDC),
