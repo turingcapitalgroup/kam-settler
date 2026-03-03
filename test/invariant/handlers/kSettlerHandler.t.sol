@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
+import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { BaseHandler } from "kam/test/invariant/handlers/BaseHandler.t.sol";
 import { AddressSet, LibAddressSet } from "kam/test/invariant/helpers/AddressSet.sol";
 import { Bytes32Set, LibBytes32Set } from "kam/test/invariant/helpers/Bytes32Set.sol";
-import { VaultMathLib } from "kam/test/invariant/helpers/VaultMathLib.sol";
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
-import { IERC7540 } from "kam/src/interfaces/IERC7540.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkMinter } from "kam/src/interfaces/IkMinter.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { BaseVaultTypes } from "kam/src/kStakingVault/types/BaseVaultTypes.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { kSettler } from "src/kSettler.sol";
 
 contract kSettlerHandler is BaseHandler {
@@ -30,7 +30,7 @@ contract kSettlerHandler is BaseHandler {
     IkAssetRouter assetRouter;
     IVaultAdapter minterAdapter;
     IVaultAdapter dnVaultAdapter;
-    IERC7540 metavault;
+    IERC4626 metawallet;
 
     // State
     address token;
@@ -96,7 +96,7 @@ contract kSettlerHandler is BaseHandler {
         address _assetRouter,
         address _minterAdapter,
         address _dnVaultAdapter,
-        address _metavault,
+        address _metawallet,
         address _token,
         address _kToken,
         address _relayer,
@@ -112,7 +112,7 @@ contract kSettlerHandler is BaseHandler {
         assetRouter = IkAssetRouter(_assetRouter);
         minterAdapter = IVaultAdapter(_minterAdapter);
         dnVaultAdapter = IVaultAdapter(_dnVaultAdapter);
-        metavault = IERC7540(_metavault);
+        metawallet = IERC4626(_metawallet);
         token = _token;
         kToken = _kToken;
         relayer = _relayer;
@@ -262,10 +262,10 @@ contract kSettlerHandler is BaseHandler {
         // Use actual balance change to account for precision in share math
         uint256 balanceAfter = token.balanceOf(address(minterAdapter));
         if (balanceBefore > balanceAfter) {
-            // Positive netting case: tokens deposited to metavault
+            // Positive netting case: tokens deposited to metawallet
             minterExpectedAdapterBalance -= (balanceBefore - balanceAfter);
         } else if (balanceAfter > balanceBefore) {
-            // Negative netting case: tokens redeemed from metavault (sync settlement)
+            // Negative netting case: tokens redeemed from metawallet (sync settlement)
             minterExpectedAdapterBalance += (balanceAfter - balanceBefore);
         }
 
@@ -378,7 +378,7 @@ contract kSettlerHandler is BaseHandler {
             } else {
                 dnExpectedSharePrice = shares.fullMulDiv(dnExpectedTotalAssets, totalSupply_);
             }
-            dnActualAdapterBalance = metavault.balanceOf(address(dnVaultAdapter));
+            dnActualAdapterBalance = metawallet.balanceOf(address(dnVaultAdapter));
             dnActualSharePrice = dnVault.sharePrice();
 
             // Update minter adapter tracking
@@ -491,13 +491,15 @@ contract kSettlerHandler is BaseHandler {
         }
 
         // Use settler to close and propose DN vault batch
-        try settler.closeAndProposeDNVaultBatch(token) returns (bytes32 proposalId) {
+        uint256 _metawalletTotalAssets = token.balanceOf(address(metawallet));
+        bytes32 _rootHash = keccak256(abi.encodePacked(address(metawallet), _metawalletTotalAssets));
+        try settler.closeAndProposeDNVaultBatch(token, _metawalletTotalAssets, _rootHash) returns (bytes32 proposalId) {
             pendingDNSettlementProposals.add(proposalId);
             pendingDNUnsettledBatches.add(batchId);
 
             // Update adapter balance tracking
-            dnActualAdapterBalance = metavault.balanceOf(address(dnVaultAdapter));
-            uint256 minterAdapterMetavaultBalance = metavault.balanceOf(address(minterAdapter));
+            dnActualAdapterBalance = metawallet.balanceOf(address(dnVaultAdapter));
+            uint256 minterAdapterMetawalletBalance = metawallet.balanceOf(address(minterAdapter));
             minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
         } catch {
             // Batch close failed - skip
@@ -595,9 +597,9 @@ contract kSettlerHandler is BaseHandler {
     function settler_gain(uint256 amount) public {
         amount = bound(amount, 0, dnActualTotalAssets);
         if (amount == 0) return;
-        // Simulate yield in metavault
-        uint256 newBalance = token.balanceOf(address(metavault)) + amount;
-        deal(token, address(metavault), newBalance);
+        // Simulate yield in metawallet
+        uint256 newBalance = token.balanceOf(address(metawallet)) + amount;
+        deal(token, address(metawallet), newBalance);
         totalYieldInBatch[dnVault.getBatchId()] += int256(amount);
     }
 
@@ -605,7 +607,7 @@ contract kSettlerHandler is BaseHandler {
         int256 maxLoss = int256(dnExpectedAdapterTotalAssets) + totalYieldInBatch[dnVault.getBatchId()];
         if (maxLoss <= 0) return;
 
-        uint256 currentBalance = token.balanceOf(address(metavault));
+        uint256 currentBalance = token.balanceOf(address(metawallet));
         uint256 maxLossUint = uint256(maxLoss);
         if (maxLossUint > currentBalance) {
             maxLossUint = currentBalance;
@@ -615,7 +617,7 @@ contract kSettlerHandler is BaseHandler {
         if (amount == 0) return;
 
         uint256 newBalance = currentBalance - amount;
-        deal(token, address(metavault), newBalance);
+        deal(token, address(metawallet), newBalance);
         totalYieldInBatch[dnVault.getBatchId()] -= int256(amount);
     }
 

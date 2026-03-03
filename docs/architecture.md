@@ -32,15 +32,14 @@ Pure math library for fee calculations using Solady's `OptimizedFixedPointMathLi
 - **Management fee**: `(totalAssets * duration * managementFeeBps) / (SECS_PER_YEAR * MAX_BPS)` -- time-prorated per second
 - **Performance fee**: Only charged when `assetsDelta > 0` (profit exists) and `totalReturn > hurdleReturn`. Supports hard hurdle (fees on excess only) and soft hurdle (fees on total return if above hurdle). Uses `sharePriceWatermark` to prevent fee reset gaming.
 
-> **Note**: In the Solidity code, the MetaWallet is referenced via the variable `_metavault` typed as `IERC7540`. The product name is MetaWallet; the code name is `metavault`.
+> **Note**: In the Solidity code, the MetaWallet is referenced via the variable `_metawallet` typed as `IERC4626`.
 
 ### `src/libraries/ExecutionDataLibrary.sol`
 Pure library generating `Execution[]` calldata for `MinimalSmartAccount.execute()`:
 - `getTransferExecutionData` -- ERC20 `transfer`
 - `getTransferFromExecutionData` -- ERC20 `transferFrom`
-- `getRequestRedeemExecutionData` -- ERC7540 `requestRedeem`
-- `getRedeemExecutionData` -- ERC7540 `redeem`
-- `getDepositExecutionData` -- ERC7540 `requestDeposit` + `deposit` (two executions)
+- `getRedeemExecutionData` -- ERC4626 `redeem`
+- `getDepositExecutionData` -- ERC4626 `deposit`
 
 ### `script/DeploykSettler.s.sol`
 Deployment script using `DeploymentManager` base. Reads network config from JSON, fetches `kMinter` and `kAssetRouter` from the registry, deploys `kSettler`, and grants it `RELAYER_ROLE` and `MANAGER_ROLE` in the registry. Outputs deployed address to JSON.
@@ -177,8 +176,8 @@ For custodial vaults (Alpha/Beta), redeems the netted shares from the MetaWallet
                     |
                     v
             +---------------+
-            |  MetaWallet   |       ERC7540 vault holding
-            |  (ERC7540)    |       the actual strategy assets
+            |  MetaWallet   |       ERC4626 vault holding
+            |  (ERC4626)    |       the actual strategy assets
             +---------------+
 ```
 

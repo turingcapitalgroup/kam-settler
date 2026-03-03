@@ -14,18 +14,19 @@ import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { IkAssetRouter, IkSettler } from "src/interfaces/IkSettler.sol";
 import { kSettler } from "src/kSettler.sol";
+import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
 /// @title CustodialVaultTest
 /// @notice Tests for alpha and beta vault (custodial) settlement flows
 /// @dev Tests the full settlement flow: closeBatch -> proposeSettleBatch -> executeSettlement -> mockWallet transfer ->
 /// finaliseCustodialSettlement
-contract CustodialVaultTest is BaseVaultTest {
+contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
     using SafeTransferLib for address;
 
     kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
-    function setUp() public override {
+    function setUp() public override(BaseVaultTest, DeploymentBaseTest) {
         // Point to kam-v1's deployments folder which has the complete config
         vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
         DeploymentBaseTest.setUp();
@@ -43,6 +44,8 @@ contract CustodialVaultTest is BaseVaultTest {
             users.owner, users.admin, users.relayer, address(minter), address(assetRouter), address(registry)
         );
         settler = kSettler(deployment.settler);
+
+        _deployAndSwapMetaWallet(address(settler));
 
         vm.startPrank(users.admin);
         vault = IkStakingVault(address(alphaVault));
@@ -75,15 +78,15 @@ contract CustodialVaultTest is BaseVaultTest {
         paramChecker.setAllowedReceiver(address(erc7540USDC), address(wallet), true);
         vm.stopPrank();
 
-        // Setup initial deposits to metavault for kMinter adapter
+        // Setup initial deposits to metawallet for kMinter adapter
         _setupMinterAdapterDeposits();
     }
 
-    /// @notice Setup initial deposits to metavault for kMinter adapter
+    /// @notice Setup initial deposits to metawallet for kMinter adapter
     function _setupMinterAdapterDeposits() internal {
         vm.startPrank(users.relayer);
 
-        // First execution: approve USDC to erc7540USDC
+        // First execution: approve USDC to metawalletUsdc
         Execution[] memory executions1 = new Execution[](1);
         executions1[0] = Execution({
             target: tokens.usdc,
@@ -94,7 +97,7 @@ contract CustodialVaultTest is BaseVaultTest {
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode1, executionCalldata1);
 
-        // Second execution: approve erc7540USDC to adapters
+        // Second execution: approve metawalletUsdc to adapters
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
             target: address(erc7540USDC),
@@ -106,28 +109,16 @@ contract CustodialVaultTest is BaseVaultTest {
         bytes memory executionCalldata2 = ExecutionLib.encodeBatch(executions2);
         minterAdapterUSDC.execute(ModeLib.encodeSimpleBatch(), executionCalldata2);
 
-        // Third execution: requestDeposit and deposit
+        // Third execution: deposit
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
 
         // zeroize vault balance
         deal(tokens.usdc, address(erc7540USDC), 0);
-        Execution[] memory executions3 = new Execution[](2);
+        Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
             target: address(erc7540USDC),
             value: 0,
-            callData: abi.encodeWithSignature(
-                "requestDeposit(uint256,address,address)",
-                balance,
-                address(minterAdapterUSDC),
-                address(minterAdapterUSDC)
-            )
-        });
-        executions3[1] = Execution({
-            target: address(erc7540USDC),
-            value: 0,
-            callData: abi.encodeWithSignature(
-                "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
-            )
+            callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });
 
         bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);
@@ -353,6 +344,61 @@ contract CustodialVaultTest is BaseVaultTest {
         assertEq(proposal.netted, 0, "Empty batch should have zero netted");
 
         vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId);
+    }
+
+    /// @notice Test that closeVaultBatch reverts when called on a DN vault
+    function test_custodial_closeVaultBatch_reverts_on_dn_vault() public {
+        (bytes32 batchId,,,) = dnVault.getCurrentBatchInfo();
+
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS7"));
+        settler.closeVaultBatch(address(dnVault), batchId, true);
+    }
+
+    /// @notice Test that closeVaultBatch reverts when called on the kMinter
+    function test_custodial_closeVaultBatch_reverts_on_minter() public {
+        bytes32 batchId = minter.getBatchId(tokens.usdc);
+
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS7"));
+        settler.closeVaultBatch(address(minter), batchId, true);
+    }
+
+    /// @notice Test that finaliseCustodialSettlement reverts on a cancelled (non-executed) proposal
+    function test_custodial_finaliseCustodialSettlement_reverts_cancelled_proposal() public {
+        uint256 depositAmount = 100e6;
+        uint256 requestAmount = 50e6;
+
+        // Setup kMinter deposits
+        _setupKMinterDeposits(depositAmount, requestAmount);
+
+        // Switch to alpha vault
+        vault = alphaVault;
+
+        // User stakes kUSD in alpha vault
+        vm.startPrank(users.alice);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        alphaVault.requestStake(users.alice, users.alice, depositAmount);
+        vm.stopPrank();
+
+        // Close the vault batch
+        (bytes32 batchId,,,) = alphaVault.getCurrentBatchInfo();
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId, true);
+
+        // Propose settlement
+        uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
+        vm.prank(users.relayer);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets, 0, 0);
+
+        // Guardian cancels the proposal (removes from pending, does NOT add to executed)
+        vm.prank(users.guardian);
+        assetRouter.cancelProposal(proposalId);
+
+        // Relayer tries to finalise the cancelled proposal — should revert with KS8
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS8"));
         settler.finaliseCustodialSettlement(proposalId);
     }
 

@@ -78,23 +78,20 @@ interface IkSettler {
     /// @param _relayer address to be granted the relayer role
     function grantRelayerRole(address _relayer) external payable;
 
-    /// @notice Closes a delta-neutral vault batch and initiates settlement with default profit share
-    /// @dev This function handles the complete settlement process for DN vault batches,
-    ///      including rebalancing, fee calculation, and asset netting. Uses 0 profit share.
-    /// @param _asset The asset address for which to close the batch
-    /// @return _proposalId The proposal ID for the settlement
-    function closeAndProposeDNVaultBatch(address _asset) external payable returns (bytes32 _proposalId);
-
-    /// @notice Closes a delta-neutral vault batch and initiates settlement with profit sharing
+    /// @notice Closes a delta-neutral vault batch and initiates settlement
     /// @dev This function handles the complete settlement process for DN vault batches,
     ///      including rebalancing, fee calculation, asset netting, and profit distribution.
-    ///      Profit is distributed: insurance (up to target) -> treasury -> vault adapter -> kMinter keeps rest
+    ///      All profit is distributed: insurance (up to target) -> treasury -> vault adapter.
+    ///      Atomically settles the MetaWallet's virtualTotalAssets before computing depeg,
+    ///      so that profit distribution reflects real strategy yield.
     /// @param _asset The asset address for which to close the batch
-    /// @param _profitShareBps Basis points of remaining profit (after insurance + treasury) to send to vault adapter
+    /// @param _newMetaWalletTotalAssets The new total assets for the MetaWallet (idle + strategies)
+    /// @param _rootHash The merkle root committing to the strategy breakdown
     /// @return _proposalId The proposal ID for the settlement
     function closeAndProposeDNVaultBatch(
         address _asset,
-        uint16 _profitShareBps
+        uint256 _newMetaWalletTotalAssets,
+        bytes32 _rootHash
     )
         external
         payable
@@ -102,7 +99,7 @@ interface IkSettler {
 
     /// @notice Closes a kMinter batch and handles asset rebalancing
     /// @dev This function closes the kMinter batch and processes any negative netted assets
-    ///      by requesting redemption from the delta-neutral meta-vault
+    ///      by requesting redemption from the delta-neutral meta-wallet
     /// @param _asset The asset address for which to close the batch
     /// @return _proposalId The proposal ID for the settlement, or bytes32(0) if no netting is needed
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId);
@@ -117,16 +114,6 @@ interface IkSettler {
     /// @dev Executes a settlement batch proposal through the kAssetRouter
     /// @param _proposalId The proposal ID to execute
     function executeSettleBatch(bytes32 _proposalId) external payable;
-
-    /// @notice Accepts a proposal where yield exceeded the delta
-    /// @dev Backend call this, and sends to forDefi for approval
-    /// @param _proposalId The proposal ID to execute
-    function acceptProposal(bytes32 _proposalId) external;
-
-    /// @notice Cancels a proposal id
-    /// @dev Backend call this if forDefi transactions was aborted
-    /// @param _proposalId The proposal ID to execute
-    function cancelProposal(bytes32 _proposalId) external;
 
     /// @notice Proposes a settlement batch through the kAssetRouter
     /// @dev Proposes a settlement batch through the kAssetRouter with fee information
@@ -155,9 +142,9 @@ interface IkSettler {
     /// @param _create if we create a new batch or not
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable;
 
-    /// @notice Liquidates insurance's metavault shares to underlying assets
-    /// @dev Calls requestRedeem + redeem through the insurance smart account.
-    ///      After execution, insurance will hold underlying assets instead of metavault shares.
+    /// @notice Liquidates insurance's metawallet shares to underlying assets
+    /// @dev Calls redeem through the insurance smart account.
+    ///      After execution, insurance will hold underlying assets instead of metawallet shares.
     /// @param _asset The asset for which to liquidate insurance shares
     function liquidateInsurance(address _asset) external payable;
 

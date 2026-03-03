@@ -16,8 +16,9 @@ import { Execution, ExecutionLib } from "minimal-smart-account/libraries/Executi
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { kSettler } from "src/kSettler.sol";
+import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
-abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
+abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
     using SafeTransferLib for address;
 
     kSettlerHandler public settlerHandler;
@@ -49,6 +50,9 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         );
         settler = kSettler(deployment.settler);
 
+        // Deploy real MetaWallet and swap it in place of MockERC4626
+        _deployAndSwapMetaWallet(address(settler));
+
         // Grant roles to settler for adapter operations
         vm.prank(users.owner);
         minterAdapterUSDC.grantRoles(address(settler), 2);
@@ -56,11 +60,11 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         vm.prank(users.owner);
         DNVaultAdapterUSDC.grantRoles(address(settler), 2);
 
-        // Set up param checker to allow DNVaultAdapter as spender for erc7540USDC
+        // Set up param checker to allow DNVaultAdapter as spender for metawalletUsdc
         vm.prank(users.admin);
         paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
 
-        // Set up approvals for minter adapter to interact with metavault
+        // Set up approvals for minter adapter to interact with metawallet
         _setupMinterAdapterApprovals();
     }
 
@@ -77,7 +81,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
 
         vm.startPrank(users.relayer);
 
-        // Approve USDC to erc7540USDC
+        // Approve USDC to metawalletUsdc
         Execution[] memory executions1 = new Execution[](1);
         executions1[0] = Execution({
             target: tokens.usdc,
@@ -88,7 +92,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode1, executionCalldata1);
 
-        // Approve erc7540USDC to DNVaultAdapter
+        // Approve metawalletUsdc to DNVaultAdapter
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
             target: address(erc7540USDC),
@@ -101,27 +105,15 @@ abstract contract kSettlerSetUp is StdInvariant, DeploymentBaseTest {
         ModeCode mode2 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode2, executionCalldata2);
 
-        // Initial deposit to metavault
+        // Initial deposit to metawallet
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         deal(tokens.usdc, address(erc7540USDC), 0);
 
-        Execution[] memory executions3 = new Execution[](2);
+        Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
             target: address(erc7540USDC),
             value: 0,
-            callData: abi.encodeWithSignature(
-                "requestDeposit(uint256,address,address)",
-                balance,
-                address(minterAdapterUSDC),
-                address(minterAdapterUSDC)
-            )
-        });
-        executions3[1] = Execution({
-            target: address(erc7540USDC),
-            value: 0,
-            callData: abi.encodeWithSignature(
-                "deposit(uint256,address,address)", balance, address(minterAdapterUSDC), address(minterAdapterUSDC)
-            )
+            callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });
 
         bytes memory executionCalldata3 = ExecutionLib.encodeBatch(executions3);

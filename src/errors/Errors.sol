@@ -10,6 +10,10 @@ pragma solidity 0.8.30;
 //   KS4 - Netted assets are positive
 //   KS5 - Insufficient balance
 //   KS6 - Invalid profit share basis points
+//   KS7 - Invalid vault type for operation
+//   KS8 - Proposal not executed
+//   KS9 - Invalid target type
+//   KS10 - Missing MetaWallet approval from kMinterAdapter to vaultAdapter
 
 string constant KSETTLER_BATCH_ALREADY_CLOSED = "KS1";
 string constant KSETTLER_BATCH_ALREADY_SETTLED = "KS2";
@@ -17,3 +21,7 @@ string constant KSETTLER_ADDRESS_ZERO = "KS3";
 string constant KSETTLER_NETTED_ASSETS_POSITIVE = "KS4";
 string constant KSETTLER_INSUFFICIENT_BALANCE = "KS5";
 string constant KSETTLER_INVALID_PROFIT_SHARE_BPS = "KS6";
+string constant KSETTLER_INVALID_VAULT_TYPE = "KS7";
+string constant KSETTLER_PROPOSAL_NOT_EXECUTED = "KS8";
+string constant KSETTLER_INVALID_TARGET_TYPE = "KS9";
+string constant KSETTLER_MISSING_ALLOWANCE = "KS10";

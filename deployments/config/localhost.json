@@ -15,7 +15,7 @@
     "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "WBTC": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
   },
-  "ERC7540s": {
+  "MetaWallets": {
     "USDC": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
     "WBTC": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
   },
@@ -97,8 +97,8 @@
     "maxSingleTransfer": {
       "USDC": "1000000000000",
       "WBTC": "3000000000",
-      "ERC7540USDC": "1000000000000",
-      "ERC7540WBTC": "3000000000"
+      "MetaWalletUSDC": "1000000000000",
+      "MetaWalletWBTC": "3000000000"
     },
     "allowedReceivers": {
       "USDC": [
@@ -111,11 +111,11 @@
         "walletUSDC",
         "dnVaultAdapterWBTC"
       ],
-      "ERC7540USDC": [
+      "MetaWalletUSDC": [
         "kMinterAdapterUSDC",
         "dnVaultAdapterUSDC"
       ],
-      "ERC7540WBTC": [
+      "MetaWalletWBTC": [
         "kMinterAdapterWBTC",
         "dnVaultAdapterWBTC"
       ]
@@ -133,12 +133,12 @@
         "dnVaultAdapterWBTC",
         "treasury"
       ],
-      "ERC7540USDC": [
+      "MetaWalletUSDC": [
         "kMinterAdapterUSDC",
         "dnVaultAdapterUSDC",
         "treasury"
       ],
-      "ERC7540WBTC": [
+      "MetaWalletWBTC": [
         "kMinterAdapterWBTC",
         "dnVaultAdapterWBTC",
         "treasury"
@@ -146,13 +146,13 @@
     },
     "allowedSpenders": {
       "USDC": [
-        "ERC7540USDC",
+        "MetaWalletUSDC",
         "dnVaultAdapterUSDC",
         "alphaVaultAdapter",
         "betaVaultAdapter"
       ],
       "WBTC": [
-        "ERC7540WBTC",
+        "MetaWalletWBTC",
         "dnVaultAdapterWBTC"
       ]
     }

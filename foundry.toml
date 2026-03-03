@@ -54,8 +54,11 @@ remappings_generated = false
 remappings_regenerate = false
 # whether to suffix the remapping with the version: `name-a.b.c`
 remappings_version = false
+# whether to install sub-dependencies or not. If true this will install the dependencies of dependencies recursively.
+recursive_deps = true
 
 [dependencies]
 forge-std = "1.10.0"
 kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git" }
 minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git" }
+metawallet = { version = "1.0", git = "https://github.com/turingcapitalgroup/metawallet.git" }
