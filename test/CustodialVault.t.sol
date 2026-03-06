@@ -7,7 +7,7 @@ import { IRegistry } from "kam/src/interfaces/IRegistry.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
-import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
+import { MockERC4626 } from "kam/test/mocks/MockERC4626.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
@@ -71,11 +71,11 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
 
         // Setup param checker for alpha/beta adapters
         vm.startPrank(users.admin);
-        paramChecker.setAllowedSpender(address(erc7540USDC), address(ALPHAVaultAdapterUSDC), true);
-        paramChecker.setAllowedSpender(address(erc7540USDC), address(BETHAVaultAdapterUSDC), true);
+        paramChecker.setAllowedSpender(address(metawalletUSDC), address(ALPHAVaultAdapterUSDC), true);
+        paramChecker.setAllowedSpender(address(metawalletUSDC), address(BETHAVaultAdapterUSDC), true);
         // Allow transfers to wallet (custodial target)
         paramChecker.setAllowedReceiver(tokens.usdc, address(wallet), true);
-        paramChecker.setAllowedReceiver(address(erc7540USDC), address(wallet), true);
+        paramChecker.setAllowedReceiver(address(metawalletUSDC), address(wallet), true);
         vm.stopPrank();
 
         // Setup initial deposits to metawallet for kMinter adapter
@@ -91,7 +91,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         executions1[0] = Execution({
             target: tokens.usdc,
             value: 0,
-            callData: abi.encodeWithSignature("approve(address,uint256)", address(erc7540USDC), type(uint256).max)
+            callData: abi.encodeWithSignature("approve(address,uint256)", address(metawalletUSDC), type(uint256).max)
         });
         bytes memory executionCalldata1 = ExecutionLib.encodeBatch(executions1);
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
@@ -100,7 +100,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         // Second execution: approve metawalletUsdc to adapters
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
-            target: address(erc7540USDC),
+            target: address(metawalletUSDC),
             value: 0,
             callData: abi.encodeWithSignature(
                 "approve(address,uint256)", address(ALPHAVaultAdapterUSDC), type(uint256).max
@@ -113,10 +113,10 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
 
         // zeroize vault balance
-        deal(tokens.usdc, address(erc7540USDC), 0);
+        deal(tokens.usdc, address(metawalletUSDC), 0);
         Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
-            target: address(erc7540USDC),
+            target: address(metawalletUSDC),
             value: 0,
             callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });

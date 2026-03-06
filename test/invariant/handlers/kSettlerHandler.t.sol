@@ -365,7 +365,7 @@ contract kSettlerHandler is BaseHandler {
 
             dnExpectedSupply -= expectedSharesToBurn;
             (,, uint256 expectedFees) =
-                VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply);
+                VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp);
             dnActualTotalAssets = dnVault.totalAssets();
             dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedFees;
             dnActualNetTotalAssets = dnVault.totalNetAssets();
@@ -540,7 +540,7 @@ contract kSettlerHandler is BaseHandler {
         dnExpectedSupply += sharesToMint;
         dnActualSupply = dnVault.totalSupply();
         (,, uint256 expectedNewFees) =
-            VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply);
+            VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp);
         dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
@@ -582,7 +582,7 @@ contract kSettlerHandler is BaseHandler {
         dnExpectedTotalAssets -= totalKTokensNet;
         dnActualTotalAssets = dnVault.totalAssets();
         (,, uint256 expectedNewFees) =
-            VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply);
+            VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp);
         dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();

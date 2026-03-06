@@ -732,7 +732,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         uint256 _totalAssets = _vault.totalAssets();
 
         (uint256 _managementFee, uint256 _performanceFee,) =
-            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply());
+            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply(), block.timestamp);
 
         uint256 feeAssets;
         // Check if management fee is due
