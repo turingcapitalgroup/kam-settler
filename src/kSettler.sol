@@ -157,7 +157,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         if (_nettedAmount < 0) {
             uint256 _abs = _nettedAmount.abs();
-            
+
             // Money should always be idle if not revert and divest 1st.
             Execution[] memory _executions =
                 ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _abs);
@@ -218,7 +218,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Verify kMinterAdapter has approved vaultAdapter to transferFrom MetaWallet shares.
         // This approval is an external deployment invariant that must be set by a MANAGER.
-        require(_metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter)) > 0, KSETTLER_MISSING_ALLOWANCE);
+        // NOTE: The actual allowance sufficiency is checked before each transferFrom call below.
 
         IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
 
@@ -252,6 +252,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
                 // Transfer remaining shares to vault adapter if any
                 if (_sharesToVaultAdapter > 0) {
+                    require(
+                        _metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter))
+                            >= _sharesToVaultAdapter,
+                        KSETTLER_MISSING_ALLOWANCE
+                    );
                     _executeRebalanceTransfer(
                         false, // toKMinterAdapter = false means transfer FROM kMinter TO vaultAdapter
                         _metawallet,
