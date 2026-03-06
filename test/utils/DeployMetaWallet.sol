@@ -89,7 +89,8 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         bytes4 transferSel = IERC20.transfer.selector;
         bytes4 transferFromSel = IERC20.transferFrom.selector;
         bytes4 depSel = IERC4626.deposit.selector;
-        bytes4 redeemSel = IERC4626.redeem.selector;
+        bytes4 withdrawSel = IERC4626.withdraw.selector;
+        bytes4 mockRedeemSel = IERC4626.redeem.selector;
 
         vm.startPrank(users.admin);
 
@@ -100,7 +101,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferFromSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, depSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, redeemSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, withdrawSel, true);
 
         // DNVaultAdapter
         g.setAllowedSelector(address(DNVaultAdapterUSDC), real, 0, approveSel, true);
@@ -124,7 +125,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferFromSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, depSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, redeemSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, mockRedeemSel, false);
         // Legacy selectors added by the original deployment for kMinterAdapter
         g.setAllowedSelector(
             address(minterAdapterUSDC), mock, 0, bytes4(keccak256("requestDeposit(uint256,address,address)")), false

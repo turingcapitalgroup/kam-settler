@@ -364,8 +364,9 @@ contract kSettlerHandler is BaseHandler {
             }
 
             dnExpectedSupply -= expectedSharesToBurn;
-            (,, uint256 expectedFees) =
-                VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp);
+            (,, uint256 expectedFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
+                dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
+            );
             dnActualTotalAssets = dnVault.totalAssets();
             dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedFees;
             dnActualNetTotalAssets = dnVault.totalNetAssets();
@@ -539,8 +540,9 @@ contract kSettlerHandler is BaseHandler {
         dnActualTotalAssets = dnVault.totalAssets();
         dnExpectedSupply += sharesToMint;
         dnActualSupply = dnVault.totalSupply();
-        (,, uint256 expectedNewFees) =
-            VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp);
+        (,, uint256 expectedNewFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
+            dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
+        );
         dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
@@ -581,8 +583,9 @@ contract kSettlerHandler is BaseHandler {
         dnActualSupply = dnVault.totalSupply();
         dnExpectedTotalAssets -= totalKTokensNet;
         dnActualTotalAssets = dnVault.totalAssets();
-        (,, uint256 expectedNewFees) =
-            VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp);
+        (,, uint256 expectedNewFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
+            dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
+        );
         dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();

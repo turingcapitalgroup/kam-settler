@@ -762,7 +762,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.startPrank(users.admin);
 
         // Set up insurance executor permissions for metawallet operations
-        bytes4 redeemSelector = IERC4626.redeem.selector;
+        bytes4 redeemSelector = IERC4626.withdraw.selector;
 
         // Cast registry to IExecutionGuardian to access setAllowedSelector
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));

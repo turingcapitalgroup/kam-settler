@@ -535,8 +535,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _vault
         );
 
-        // Re-read the actual balance after netting to reflect post-netting reality
-        _assetData._newTotalAssets = _metawallet.convertToAssets(_metawallet.balanceOf(address(_vaultAdapter)));
+        _assetData._newTotalAssets = _assetData._dnAdapterAssets;
     }
 
     /// @dev Handles the netting process by transferring assets between adapters based on the difference
