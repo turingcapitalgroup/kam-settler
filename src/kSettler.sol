@@ -157,12 +157,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         if (_nettedAmount < 0) {
             uint256 _abs = _nettedAmount.abs();
-            // Convert absolute value of netted assets to shares for the redeem request
-            uint256 _shares = _metawallet.convertToShares(_abs);
-
+            
             // Money should always be idle if not revert and divest 1st.
             Execution[] memory _executions =
-                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _shares);
+                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _abs);
 
             _executeAdapterCall(_adapter, _executions);
         } else if (_nettedAmount > 0) {
@@ -345,7 +343,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Build execution for redeem
         Execution[] memory _executions =
-            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _shares);
+            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _assetsValue);
 
         // Execute through insurance smart account
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
@@ -436,11 +434,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         }
         if (_proposal.netted > 0) {
             uint256 _nettedAbs = uint256(_netted);
-            uint256 _shares = _metawallet.convertToShares(_nettedAbs);
 
             // Execute redemption through the kMinter adapter
             Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
-                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
+                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _nettedAbs
             );
 
             // redeem assets from metawallet using kMinter adapter
