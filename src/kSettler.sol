@@ -157,12 +157,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         if (_nettedAmount < 0) {
             uint256 _abs = _nettedAmount.abs();
-            // Convert absolute value of netted assets to shares for the redeem request
-            uint256 _shares = _metawallet.convertToShares(_abs);
 
             // Money should always be idle if not revert and divest 1st.
             Execution[] memory _executions =
-                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _shares);
+                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _abs);
 
             _executeAdapterCall(_adapter, _executions);
         } else if (_nettedAmount > 0) {
@@ -220,7 +218,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Verify kMinterAdapter has approved vaultAdapter to transferFrom MetaWallet shares.
         // This approval is an external deployment invariant that must be set by a MANAGER.
-        require(_metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter)) > 0, KSETTLER_MISSING_ALLOWANCE);
+        // NOTE: The actual allowance sufficiency is checked before each transferFrom call below.
 
         IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
 
@@ -254,6 +252,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
                 // Transfer remaining shares to vault adapter if any
                 if (_sharesToVaultAdapter > 0) {
+                    require(
+                        _metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter))
+                            >= _sharesToVaultAdapter,
+                        KSETTLER_MISSING_ALLOWANCE
+                    );
                     _executeRebalanceTransfer(
                         false, // toKMinterAdapter = false means transfer FROM kMinter TO vaultAdapter
                         _metawallet,
@@ -345,7 +348,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Build execution for redeem
         Execution[] memory _executions =
-            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _shares);
+            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _assetsValue);
 
         // Execute through insurance smart account
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
@@ -436,11 +439,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         }
         if (_proposal.netted > 0) {
             uint256 _nettedAbs = uint256(_netted);
-            uint256 _shares = _metawallet.convertToShares(_nettedAbs);
 
             // Execute redemption through the kMinter adapter
             Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
-                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _shares
+                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _nettedAbs
             );
 
             // redeem assets from metawallet using kMinter adapter
@@ -729,7 +731,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         uint256 _totalAssets = _vault.totalAssets();
 
         (uint256 _managementFee, uint256 _performanceFee,) =
-            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply());
+            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply(), block.timestamp);
 
         uint256 feeAssets;
         // Check if management fee is due

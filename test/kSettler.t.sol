@@ -7,7 +7,7 @@ import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
-import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
+import { MockERC4626 } from "kam/test/mocks/MockERC4626.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
@@ -67,17 +67,17 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         vm.stopPrank();
         vm.prank(users.admin);
-        paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
+        paramChecker.setAllowedSpender(address(metawalletUSDC), address(DNVaultAdapterUSDC), true);
         vm.startPrank(users.relayer);
 
-        uint256 _kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        uint256 _actualKMinterAssets = erc7540USDC.convertToAssets(_kMinterShares);
+        uint256 _kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 _actualKMinterAssets = metawalletUSDC.convertToAssets(_kMinterShares);
 
         Execution[] memory executions1 = new Execution[](1);
         executions1[0] = Execution({
             target: tokens.usdc,
             value: 0,
-            callData: abi.encodeWithSignature("approve(address,uint256)", address(erc7540USDC), type(uint256).max)
+            callData: abi.encodeWithSignature("approve(address,uint256)", address(metawalletUSDC), type(uint256).max)
         });
         bytes memory executionCalldata1 = ExecutionLib.encodeBatch(executions1);
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
@@ -85,7 +85,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
-            target: address(erc7540USDC),
+            target: address(metawalletUSDC),
             value: 0,
             callData: abi.encodeWithSignature(
                 "approve(address,uint256)", address(DNVaultAdapterUSDC), type(uint256).max
@@ -97,10 +97,10 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
 
-        deal(tokens.usdc, address(erc7540USDC), 0);
+        deal(tokens.usdc, address(metawalletUSDC), 0);
         Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
-            target: address(erc7540USDC),
+            target: address(metawalletUSDC),
             value: 0,
             callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });
@@ -109,8 +109,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         ModeCode mode3 = ModeLib.encodeSimpleBatch();
         minterAdapterUSDC.execute(mode3, executionCalldata3);
 
-        _kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        _actualKMinterAssets = erc7540USDC.convertToAssets(_kMinterShares);
+        _kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        _actualKMinterAssets = metawalletUSDC.convertToAssets(_kMinterShares);
 
         vm.stopPrank();
     }
@@ -136,10 +136,10 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 requestId = minter.requestBurn(tokens.usdc, users.institution, requestAmount);
         assertEq(adapterBalanceAfter - adapterBalanceBefore, depositAmount);
 
-        uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(metawalletUSDC));
         bytes32 proposalId = _closeMinterBatch();
         assertNotEq(proposalId, bytes32(0));
-        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(metawalletUSDC));
 
         assertEq(metawalletUsdcBalanceAfter - metawalletUsdcBalanceBefore, depositAmount - requestAmount);
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
@@ -171,11 +171,11 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 requestId = minter.requestBurn(tokens.usdc, users.institution, requestAmount);
         assertEq(adapterBalanceAfter - adapterBalanceBefore, depositAmount);
 
-        uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(metawalletUSDC));
         bytes32 proposalId = _closeMinterBatch();
         assertNotEq(proposalId, bytes32(0));
 
-        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(erc7540USDC));
+        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(metawalletUSDC));
 
         assertEq(metawalletUsdcBalanceBefore - metawalletUsdcBalanceAfter, requestAmount - depositAmount);
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
@@ -199,9 +199,9 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
-        uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
@@ -231,9 +231,9 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         bytes32 requestId = vault.requestStake(users.alice, users.alice, requestAmount);
-        uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
@@ -266,12 +266,12 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.startPrank(users.alice);
         kUSD.approve(address(vault), type(uint256).max);
         bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
-        uint256 adapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
 
-        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        uint256 adapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
         _acceptAndExecute(proposalId);
@@ -290,7 +290,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.prank(users.alice);
         requestId = vault.requestStake(users.alice, users.alice, depositAmount);
 
-        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
         _acceptAndExecute(proposalId);
@@ -304,7 +304,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         assertApproxEqAbs(vault.convertToAssets(gotShares), depositAmount, 1);
 
-        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
 
         uint256 sharePriceBefore = vault.sharePrice();
         proposalId = _closeAndProposeDeltaNeutralBatch();
@@ -322,8 +322,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
     function _closeAndProposeDeltaNeutralBatch() internal returns (bytes32 proposalId) {
         vm.startPrank(users.relayer);
-        uint256 _totalAssets = tokens.usdc.balanceOf(address(erc7540USDC));
-        bytes32 _rootHash = keccak256(abi.encodePacked(address(erc7540USDC), _totalAssets));
+        uint256 _totalAssets = tokens.usdc.balanceOf(address(metawalletUSDC));
+        bytes32 _rootHash = keccak256(abi.encodePacked(address(metawalletUSDC), _totalAssets));
         proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, _totalAssets, _rootHash);
         vm.stopPrank();
     }
@@ -338,8 +338,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function _getDepeg() internal view returns (int256) {
-        uint256 _kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        uint256 _actualKMinterAssets = erc7540USDC.convertToAssets(_kMinterShares);
+        uint256 _kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 _actualKMinterAssets = metawalletUSDC.convertToAssets(_kMinterShares);
         uint256 _expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
         // Positive = surplus/profit, Negative = deficit/loss
         return int256(_actualKMinterAssets) - int256(_expectedKMinterAssets);
@@ -365,10 +365,10 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function _syncMetaWalletTotalAssets() internal {
-        uint256 newTotalAssets = tokens.usdc.balanceOf(address(erc7540USDC));
-        bytes32 rootHash = keccak256(abi.encodePacked(address(erc7540USDC), newTotalAssets));
+        uint256 newTotalAssets = tokens.usdc.balanceOf(address(metawalletUSDC));
+        bytes32 rootHash = keccak256(abi.encodePacked(address(metawalletUSDC), newTotalAssets));
         vm.prank(address(settler));
-        IVaultModule(address(erc7540USDC)).settleTotalAssets(newTotalAssets, rootHash);
+        IVaultModule(address(metawalletUSDC)).settleTotalAssets(newTotalAssets, rootHash);
     }
 
     function _setupProfitDistribution(uint16 insuranceBps, uint16 treasuryBps) internal {
@@ -378,10 +378,10 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         registry.setTreasuryBps(treasuryBps);
         (address treasury, address insurance,,) = registry.getSettlementConfig();
         if (insurance != address(0)) {
-            paramChecker.setAllowedReceiver(address(erc7540USDC), insurance, true);
+            paramChecker.setAllowedReceiver(address(metawalletUSDC), insurance, true);
         }
         if (treasury != address(0)) {
-            paramChecker.setAllowedReceiver(address(erc7540USDC), treasury, true);
+            paramChecker.setAllowedReceiver(address(metawalletUSDC), treasury, true);
         }
         vm.stopPrank();
     }
@@ -412,17 +412,17 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
-        (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
         require(success);
 
         _syncMetaWalletTotalAssets();
 
         (, address insurance,,) = registry.getSettlementConfig();
-        uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceBalanceBefore = metawalletUSDC.balanceOf(insurance);
 
-        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = metawalletUSDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
         // Positive = surplus/profit, Negative = deficit/loss
         int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
@@ -430,24 +430,24 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
         uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
-        uint256 insuranceCurrentAssets = erc7540USDC.convertToAssets(insuranceBalanceBefore);
+        uint256 insuranceCurrentAssets = metawalletUSDC.convertToAssets(insuranceBalanceBefore);
         uint256 insuranceDeficitAssets =
             insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
 
-        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
-        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+        uint256 profitShares = metawalletUSDC.convertToShares(profitAssets);
+        while (metawalletUSDC.convertToAssets(profitShares) < profitAssets) {
             profitShares += 1;
         }
 
-        uint256 insuranceDeficitShares = erc7540USDC.convertToShares(insuranceDeficitAssets);
-        while (erc7540USDC.convertToAssets(insuranceDeficitShares) < insuranceDeficitAssets) {
+        uint256 insuranceDeficitShares = metawalletUSDC.convertToShares(insuranceDeficitAssets);
+        while (metawalletUSDC.convertToAssets(insuranceDeficitShares) < insuranceDeficitAssets) {
             insuranceDeficitShares += 1;
         }
         uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        uint256 insuranceBalanceAfter = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceBalanceAfter = metawalletUSDC.balanceOf(insurance);
         uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
 
         assertEq(insuranceSharesReceived, expectedInsuranceShares);
@@ -481,25 +481,25 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
-        (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
         require(success);
 
         _syncMetaWalletTotalAssets();
 
         (address treasury,,,) = registry.getSettlementConfig();
-        uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
+        uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
 
-        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = metawalletUSDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
         // Positive = surplus/profit, Negative = deficit/loss
         int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
 
         uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
-        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
-        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+        uint256 profitShares = metawalletUSDC.convertToShares(profitAssets);
+        while (metawalletUSDC.convertToAssets(profitShares) < profitAssets) {
             profitShares += 1;
         }
 
@@ -508,7 +508,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        uint256 treasuryBalanceAfter = erc7540USDC.balanceOf(treasury);
+        uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
         uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
 
         assertEq(treasurySharesReceived, expectedTreasuryShares);
@@ -543,18 +543,18 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
-        (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
         require(success);
 
         _syncMetaWalletTotalAssets();
 
         (address treasury, address insurance,,) = registry.getSettlementConfig();
-        uint256 insuranceBalanceBefore = erc7540USDC.balanceOf(insurance);
-        uint256 treasuryBalanceBefore = erc7540USDC.balanceOf(treasury);
+        uint256 insuranceBalanceBefore = metawalletUSDC.balanceOf(insurance);
+        uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
 
-        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = metawalletUSDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
         // Positive = surplus/profit, Negative = deficit/loss
         int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
@@ -562,17 +562,17 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
         uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
-        uint256 insuranceCurrentAssets = erc7540USDC.convertToAssets(insuranceBalanceBefore);
+        uint256 insuranceCurrentAssets = metawalletUSDC.convertToAssets(insuranceBalanceBefore);
         uint256 insuranceDeficitAssets =
             insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
 
-        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
-        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+        uint256 profitShares = metawalletUSDC.convertToShares(profitAssets);
+        while (metawalletUSDC.convertToAssets(profitShares) < profitAssets) {
             profitShares += 1;
         }
 
-        uint256 insuranceDeficitShares = erc7540USDC.convertToShares(insuranceDeficitAssets);
-        while (erc7540USDC.convertToAssets(insuranceDeficitShares) < insuranceDeficitAssets) {
+        uint256 insuranceDeficitShares = metawalletUSDC.convertToShares(insuranceDeficitAssets);
+        while (metawalletUSDC.convertToAssets(insuranceDeficitShares) < insuranceDeficitAssets) {
             insuranceDeficitShares += 1;
         }
         uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
@@ -582,8 +582,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        uint256 insuranceBalanceAfter = erc7540USDC.balanceOf(insurance);
-        uint256 treasuryBalanceAfter = erc7540USDC.balanceOf(treasury);
+        uint256 insuranceBalanceAfter = metawalletUSDC.balanceOf(insurance);
+        uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
 
         uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
         uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
@@ -619,24 +619,24 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
-        (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
         require(success);
 
         _syncMetaWalletTotalAssets();
 
-        uint256 dnAdapterBalanceBefore = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 dnAdapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
 
-        uint256 kMinterShares = erc7540USDC.balanceOf(address(minterAdapterUSDC));
-        uint256 actualKMinterAssets = erc7540USDC.convertToAssets(kMinterShares);
+        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 actualKMinterAssets = metawalletUSDC.convertToAssets(kMinterShares);
         uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
         // Positive = surplus/profit, Negative = deficit/loss
         int256 depeg = int256(actualKMinterAssets) - int256(expectedKMinterAssets);
 
         uint256 profitAssets = depeg > 0 ? uint256(depeg) : 0;
 
-        uint256 profitShares = erc7540USDC.convertToShares(profitAssets);
-        while (erc7540USDC.convertToAssets(profitShares) < profitAssets) {
+        uint256 profitShares = metawalletUSDC.convertToShares(profitAssets);
+        while (metawalletUSDC.convertToAssets(profitShares) < profitAssets) {
             profitShares += 1;
         }
 
@@ -645,10 +645,10 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        uint256 dnAdapterBalanceAfter = erc7540USDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 dnAdapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         uint256 vaultAdapterSharesReceived = dnAdapterBalanceAfter - dnAdapterBalanceBefore;
 
-        uint256 nettingShares = erc7540USDC.convertToShares(depositAmount);
+        uint256 nettingShares = metawalletUSDC.convertToShares(depositAmount);
 
         assertGt(vaultAdapterSharesReceived, nettingShares);
 
@@ -688,8 +688,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         // Mint profit to metawallet
-        (bool success,) =
-            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(erc7540USDC), metaWalletProfit));
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
         require(success);
 
         // Close batch - this should distribute profit to insurance
@@ -698,7 +698,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         // Get insurance address and verify it has shares
         (, address insurance,,) = registry.getSettlementConfig();
-        uint256 insuranceSharesBefore = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceSharesBefore = metawalletUSDC.balanceOf(insurance);
         uint256 insuranceAssetsBefore = tokens.usdc.balanceOf(insurance);
 
         // Insurance should have received some shares
@@ -713,14 +713,14 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         // Verify insurance now has assets instead of shares
-        uint256 insuranceSharesAfter = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceSharesAfter = metawalletUSDC.balanceOf(insurance);
         uint256 insuranceAssetsAfter = tokens.usdc.balanceOf(insurance);
 
         // Shares should be gone (or significantly reduced)
         assertEq(insuranceSharesAfter, 0);
 
         // Assets should have increased by approximately the value of shares redeemed
-        uint256 expectedAssets = erc7540USDC.convertToAssets(insuranceSharesBefore);
+        uint256 expectedAssets = metawalletUSDC.convertToAssets(insuranceSharesBefore);
         assertApproxEqAbs(insuranceAssetsAfter - insuranceAssetsBefore, expectedAssets, 1);
     }
 
@@ -735,7 +735,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         _setupInsurancePermissions(insurance);
 
         // Verify insurance has no shares
-        uint256 insuranceSharesBefore = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceSharesBefore = metawalletUSDC.balanceOf(insurance);
         assertEq(insuranceSharesBefore, 0);
 
         // Liquidate should return early without reverting
@@ -744,7 +744,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         // Verify nothing changed
-        uint256 insuranceSharesAfter = erc7540USDC.balanceOf(insurance);
+        uint256 insuranceSharesAfter = metawalletUSDC.balanceOf(insurance);
         assertEq(insuranceSharesAfter, 0);
     }
 
@@ -762,13 +762,13 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.startPrank(users.admin);
 
         // Set up insurance executor permissions for metawallet operations
-        bytes4 redeemSelector = IERC4626.redeem.selector;
+        bytes4 redeemSelector = IERC4626.withdraw.selector;
 
         // Cast registry to IExecutionGuardian to access setAllowedSelector
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
 
         // Allow insurance to call redeem on the metawallet (targetType = 0 for METAWALLET)
-        guardianModule.setAllowedSelector(insurance, address(erc7540USDC), 0, redeemSelector, true);
+        guardianModule.setAllowedSelector(insurance, address(metawalletUSDC), 0, redeemSelector, true);
 
         vm.stopPrank();
     }

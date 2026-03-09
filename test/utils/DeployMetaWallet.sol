@@ -4,7 +4,7 @@ pragma solidity 0.8.30;
 import { IERC20 } from "forge-std/interfaces/IERC20.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
-import { MockERC7540 } from "kam/test/mocks/MockERC7540.sol";
+import { MockERC4626 } from "kam/test/mocks/MockERC4626.sol";
 import { DeploymentBaseTest } from "kam/test/utils/DeploymentBaseTest.sol";
 import { MetaWallet } from "metawallet/src/MetaWallet.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
@@ -19,7 +19,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
     ///         parameter-checker, then reassign `metawalletUsdc`.
     /// @param _settler Address of the kSettler contract (needs MANAGER_ROLE for settleTotalAssets)
     function _deployAndSwapMetaWallet(address _settler) internal {
-        address mockAddr = address(erc7540USDC);
+        address mockAddr = address(metawalletUSDC);
 
         // --- 1. Deploy implementations directly from source ---
         MetaWallet metaWalletImpl = new MetaWallet();
@@ -38,7 +38,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         _setValidatorsAndParamChecker(proxy, pc);
 
         // --- 3. Reassign reference ---
-        erc7540USDC = MockERC7540(proxy);
+        metawalletUSDC = MockERC4626(proxy);
         vm.label(proxy, "RealMetaWallet");
     }
 
@@ -89,7 +89,8 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         bytes4 transferSel = IERC20.transfer.selector;
         bytes4 transferFromSel = IERC20.transferFrom.selector;
         bytes4 depSel = IERC4626.deposit.selector;
-        bytes4 redeemSel = IERC4626.redeem.selector;
+        bytes4 withdrawSel = IERC4626.withdraw.selector;
+        bytes4 mockRedeemSel = IERC4626.redeem.selector;
 
         vm.startPrank(users.admin);
 
@@ -100,7 +101,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferFromSel, true);
         g.setAllowedSelector(address(minterAdapterUSDC), real, 0, depSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, redeemSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, withdrawSel, true);
 
         // DNVaultAdapter
         g.setAllowedSelector(address(DNVaultAdapterUSDC), real, 0, approveSel, true);
@@ -124,7 +125,7 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferFromSel, false);
         g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, depSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, redeemSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, mockRedeemSel, false);
         // Legacy selectors added by the original deployment for kMinterAdapter
         g.setAllowedSelector(
             address(minterAdapterUSDC), mock, 0, bytes4(keccak256("requestDeposit(uint256,address,address)")), false
