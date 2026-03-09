@@ -62,7 +62,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
 
         // Set up param checker to allow DNVaultAdapter as spender for metawalletUsdc
         vm.prank(users.admin);
-        paramChecker.setAllowedSpender(address(erc7540USDC), address(DNVaultAdapterUSDC), true);
+        paramChecker.setAllowedSpender(address(metawalletUSDC), address(DNVaultAdapterUSDC), true);
 
         // Set up approvals for minter adapter to interact with metawallet
         _setupMinterAdapterApprovals();
@@ -86,7 +86,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         executions1[0] = Execution({
             target: tokens.usdc,
             value: 0,
-            callData: abi.encodeWithSignature("approve(address,uint256)", address(erc7540USDC), type(uint256).max)
+            callData: abi.encodeWithSignature("approve(address,uint256)", address(metawalletUSDC), type(uint256).max)
         });
         bytes memory executionCalldata1 = ExecutionLib.encodeBatch(executions1);
         ModeCode mode1 = ModeLib.encodeSimpleBatch();
@@ -95,7 +95,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         // Approve metawalletUsdc to DNVaultAdapter
         Execution[] memory executions2 = new Execution[](1);
         executions2[0] = Execution({
-            target: address(erc7540USDC),
+            target: address(metawalletUSDC),
             value: 0,
             callData: abi.encodeWithSignature(
                 "approve(address,uint256)", address(DNVaultAdapterUSDC), type(uint256).max
@@ -107,11 +107,11 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
 
         // Initial deposit to metawallet
         uint256 balance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
-        deal(tokens.usdc, address(erc7540USDC), 0);
+        deal(tokens.usdc, address(metawalletUSDC), 0);
 
         Execution[] memory executions3 = new Execution[](1);
         executions3[0] = Execution({
-            target: address(erc7540USDC),
+            target: address(metawalletUSDC),
             value: 0,
             callData: abi.encodeWithSignature("deposit(uint256,address)", balance, address(minterAdapterUSDC))
         });
@@ -134,7 +134,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
             address(assetRouter),
             address(minterAdapterUSDC),
             address(DNVaultAdapterUSDC),
-            address(erc7540USDC),
+            address(metawalletUSDC),
             tokens.usdc,
             address(kUSD),
             users.relayer,

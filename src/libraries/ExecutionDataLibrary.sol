@@ -54,17 +54,17 @@ library ExecutionDataLibrary {
         });
     }
 
-    /// @notice Generates execution data for an ERC4626 redeem
+    /// @notice Generates execution data for an ERC4626 withdraw
     /// @param _target The ERC4626 vault contract address
     /// @param _receiver The address that will receive the assets
     /// @param _owner The owner of the shares
-    /// @param _shares The amount of shares to redeem
-    /// @return _executions Array containing a single redeem Execution
+    /// @param _assets The amount of assets to withdraw
+    /// @return _executions Array containing a single withdraw Execution
     function getWithdrawExecutionData(
         address _target,
         address _receiver,
         address _owner,
-        uint256 _shares
+        uint256 _assets
     )
         internal
         pure
@@ -75,7 +75,7 @@ library ExecutionDataLibrary {
         _executions[0] = Execution({
             target: _target,
             value: 0,
-            callData: abi.encodeWithSelector(IERC4626.redeem.selector, _shares, _receiver, _owner)
+            callData: abi.encodeWithSelector(IERC4626.withdraw.selector, _assets, _receiver, _owner)
         });
     }
 
