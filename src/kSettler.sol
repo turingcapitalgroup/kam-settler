@@ -55,12 +55,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @notice The registry contract for address resolution
     IRegistry public registry;
 
-    /// @notice Snapshot of kMinter adapter MetaWallet shares taken before minter batch deposit/redeem.
-    /// @dev Stored as actual_shares + 1 so that 0 means "no snapshot". Used by _getDepeg() to avoid
-    ///      reading a post-mutation balanceOf() when closeAndProposeMinterBatch() runs before
-    /// closeAndProposeDNVaultBatch().
-    mapping(address asset => uint256) internal _kMinterAdapterSharesSnapshot;
-
     /*//////////////////////////////////////////////////////////////
                               ROLES
     //////////////////////////////////////////////////////////////*/
@@ -136,24 +130,15 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Close the batch in the kMinter
         kMinter.closeBatch(_batchInfo.batchId, true);
 
-        // Get adapter and metawallet
+        // Get adapter and metawallet target
         IMinimalSmartAccount _adapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
         address _target = _getTarget(address(_adapter), 0);
-        IERC4626 _metawallet = IERC4626(_target);
-
-        // NOTE: Profit distribution is NOT done here. It happens in DN vault batch settlement
-        // via closeAndProposeDNVaultBatch. The kMinter batch only handles kToken minting/burning.
 
         // Get batch balances and calculate netted assets
         (uint256 _deposited, uint256 _requested) = kAssetRouter.getBatchIdBalances(address(kMinter), _batchInfo.batchId);
         int256 _nettedAmount = int256(_deposited) - int256(_requested);
 
         uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
-
-        // Snapshot kMinter adapter shares before deposit/redeem mutates the MetaWallet.
-        // _getDepeg() uses this to avoid reading a post-mutation balanceOf() when
-        // closeAndProposeDNVaultBatch() runs after this function.
-        _kMinterAdapterSharesSnapshot[_asset] = _metawallet.balanceOf(address(_adapter)) + 1;
 
         if (_nettedAmount < 0) {
             uint256 _abs = _nettedAmount.abs();
@@ -220,7 +205,17 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // This approval is an external deployment invariant that must be set by a MANAGER.
         // NOTE: The actual allowance sufficiency is checked before each transferFrom call below.
 
-        IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
+        // Compute depeg as the rate delta from settleTotalAssets on the kMinter's MetaWallet position.
+        // Capture value BEFORE settlement, then compare AFTER. The delta isolates pure yield/loss
+        // from any prior minter deposits/withdrawals, ensuring correct depeg regardless of ordering.
+        // Proof: remaining_value = shares × old_rate = totalAssets + pending_deposit, always.
+        int256 _depeg;
+        {
+            uint256 _valueBefore = _metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)));
+            IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
+            _depeg = int256(_metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter))))
+                - int256(_valueBefore);
+        }
 
         // Retrieve current batch information
         BatchInfo memory _batchInfo = _getBatchInfo(_vault);
@@ -231,10 +226,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Close the batch in the vault
         _vault.closeBatch(_batchInfo._batchId, true);
-
-        // Handle profit distribution and rebalancing
-        // Depeg: positive = surplus/profit, negative = deficit/loss
-        int256 _depeg = _getDepeg(_kMinterAdapter, _metawallet, _asset);
 
         // Do not send profit when total supply is zero, to avoid shares inflation
         if (_vault.totalSupply() != 0) {
@@ -612,41 +603,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _executions = ExecutionDataLibrary.getTransferExecutionData(_metawallet, _kMinterAdapter, _nettedShares);
             _executeAdapterCall(IMinimalSmartAccount(_vaultAdapter), _executions);
         }
-    }
-
-    /// @notice Calculates the depeg between actual and expected kMinter adapter assets
-    /// @dev Positive depeg means surplus (profit), negative depeg means deficit (loss).
-    ///      Uses the pre-mutation share snapshot if closeAndProposeMinterBatch() has already run
-    ///      for this asset, to avoid counting the minter batch deposit/redeem as phantom profit/loss.
-    /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @param _asset Address of the underlying asset
-    /// @return Depeg value: positive = surplus/profit, negative = deficit/loss
-    function _getDepeg(
-        IMinimalSmartAccount _kMinterAdapter,
-        IERC4626 _dnMetaWallet,
-        address _asset
-    )
-        internal
-        returns (int256)
-    {
-        // Use pre-mutation snapshot if available, otherwise use live balance
-        uint256 _snapshot = _kMinterAdapterSharesSnapshot[_asset];
-        uint256 _kMinterShares;
-        if (_snapshot != 0) {
-            _kMinterShares = _snapshot - 1;
-            delete _kMinterAdapterSharesSnapshot[_asset];
-        } else {
-            _kMinterShares = _dnMetaWallet.balanceOf(address(_kMinterAdapter));
-        }
-
-        uint256 _actualKMinterAssets = _dnMetaWallet.convertToAssets(_kMinterShares);
-
-        // Get expected assets based on kToken total supply
-        uint256 _expectedKMinterAssets = IVaultAdapter(address(_kMinterAdapter)).totalAssets();
-
-        // Calculate difference: positive = surplus (actual > expected), negative = deficit (actual < expected)
-        return int256(_actualKMinterAssets) - int256(_expectedKMinterAssets);
     }
 
     /// @notice Executes the rebalancing transfer between adapters
