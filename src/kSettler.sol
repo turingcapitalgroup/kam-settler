@@ -210,12 +210,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // from any prior minter deposits/withdrawals, ensuring correct depeg regardless of ordering.
         // Proof: remaining_value = shares × old_rate = totalAssets + pending_deposit, always.
         int256 _depeg;
-        {
-            uint256 _valueBefore = _metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)));
-            IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
-            _depeg = int256(_metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter))))
-                - int256(_valueBefore);
-        }
+
+        uint256 _valueBefore = _metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)));
+        IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
+        _depeg =
+            int256(_metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)))) - int256(_valueBefore);
 
         // Retrieve current batch information
         BatchInfo memory _batchInfo = _getBatchInfo(_vault);

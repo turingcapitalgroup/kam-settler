@@ -302,7 +302,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         gotShares = vault.balanceOf(users.alice) - aliceSharesBefore;
 
-        assertApproxEqAbs(vault.convertToAssets(gotShares), depositAmount, 10);
+        assertApproxEqAbs(vault.convertToAssets(gotShares), depositAmount, 5);
 
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
 
@@ -448,7 +448,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 insuranceBalanceAfter = metawalletUSDC.balanceOf(insurance);
         uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
 
-        assertApproxEqAbs(insuranceSharesReceived, expectedInsuranceShares, 10);
+        assertApproxEqAbs(insuranceSharesReceived, expectedInsuranceShares, 5);
 
         _acceptAndExecute(proposalId);
     }
@@ -506,7 +506,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
         uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
 
-        assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 10);
+        assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 5);
 
         _acceptAndExecute(proposalId);
     }
@@ -581,8 +581,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
         uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
 
-        assertApproxEqAbs(insuranceSharesReceived, expectedInsuranceShares, 10);
-        assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 10);
+        assertApproxEqAbs(insuranceSharesReceived, expectedInsuranceShares, 5);
+        assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 5);
 
         _acceptAndExecute(proposalId);
     }
@@ -643,7 +643,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertGt(vaultAdapterSharesReceived, nettingShares);
 
         uint256 profitShareReceived = vaultAdapterSharesReceived - nettingShares;
-        assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, 10);
+        assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, 5);
 
         _acceptAndExecute(proposalId);
     }
