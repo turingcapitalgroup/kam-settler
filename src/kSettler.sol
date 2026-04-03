@@ -25,6 +25,7 @@ import {
     KSETTLER_INVALID_TARGET_TYPE,
     KSETTLER_INVALID_VAULT_TYPE,
     KSETTLER_MISSING_ALLOWANCE,
+    KSETTLER_PROPOSAL_ALREADY_FINALISED,
     KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
@@ -54,6 +55,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
     /// @notice The registry contract for address resolution
     IRegistry public registry;
+
+    /// @notice Tracks whether a proposal has already been finalised via finaliseCustodialSettlement
+    mapping(bytes32 => bool) public finalisedProposals;
 
     /*//////////////////////////////////////////////////////////////
                               ROLES
@@ -398,6 +402,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
         _lockReentrant();
         _checkRoles(RELAYER_ROLE);
+
+        require(!finalisedProposals[_proposalId], KSETTLER_PROPOSAL_ALREADY_FINALISED);
+        finalisedProposals[_proposalId] = true;
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
 

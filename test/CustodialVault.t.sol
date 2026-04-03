@@ -365,6 +365,41 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         settler.closeVaultBatch(address(minter), batchId, true);
     }
 
+    /// @notice Test that finaliseCustodialSettlement cannot be called twice for the same proposal (TOB-KAM-9)
+    function test_custodial_finaliseCustodialSettlement_reverts_duplicate_call() public {
+        uint256 depositAmount = 100e6;
+        uint256 requestAmount = 50e6;
+
+        _setupKMinterDeposits(depositAmount, requestAmount);
+
+        vault = alphaVault;
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, users.alice, depositAmount);
+        vm.stopPrank();
+
+        (bytes32 batchId,,,) = alphaVault.getCurrentBatchInfo();
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId, true);
+
+        uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
+        vm.prank(users.relayer);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets, 0, 0);
+
+        vm.prank(users.relayer);
+        settler.executeSettleBatch(proposalId);
+
+        vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId);
+
+        assertTrue(settler.finalisedProposals(proposalId));
+
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS11"));
+        settler.finaliseCustodialSettlement(proposalId);
+    }
+
     /// @notice Test that finaliseCustodialSettlement reverts on a cancelled (non-executed) proposal
     function test_custodial_finaliseCustodialSettlement_reverts_cancelled_proposal() public {
         uint256 depositAmount = 100e6;
