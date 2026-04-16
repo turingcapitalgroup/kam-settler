@@ -7,7 +7,6 @@ import { OptimizedReentrancyGuardTransient } from "kam/src/vendor/solady/utils/O
 
 // Internal Libraries
 import { ExecutionDataLibrary } from "./libraries/ExecutionDataLibrary.sol";
-import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
@@ -36,10 +35,9 @@ import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalS
 /// @title kSettler
 /// @notice Contract responsible for settling batch operations in delta-neutral vaults
 /// @dev This contract handles the complex settlement process for delta-neutral vault batches,
-///      including rebalancing, fee calculations, and asset netting operations.
+///      including rebalancing and asset netting operations.
 ///      It manages the interaction between kMinter, vault adapters, and meta-wallets.
 contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardTransient {
-    using VaultMathLib for IkStakingVault;
     using OptimizedFixedPointMathLib for int256;
     using ExecutionLib for bytes;
 
@@ -268,26 +266,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             }
         }
 
-        // Calculate and process fees (skip when no shareholders exist to absorb the cost)
-        uint64 _lastFeesChargedDateManagement;
-        uint64 _lastFeesChargedDatePerformance;
-        if (_vault.totalSupply() != 0) {
-            (_lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-                _fees(_vault, _vaultAdapter, _metawallet);
-        }
-
         // Calculate final asset data for settlement
         AssetData memory _assetData =
             _calculateAssetData(_metawallet, _kMinterAdapter, _vaultAdapter, _vault, _batchInfo);
 
         // Propose the batch settlement to the asset router
         _proposalId = kAssetRouter.proposeSettleBatch(
-            _asset,
-            address(_vault),
-            _batchInfo._batchId,
-            _assetData._newTotalAssets,
-            _lastFeesChargedDateManagement,
-            _lastFeesChargedDatePerformance
+            _asset, address(_vault), _batchInfo._batchId, _assetData._newTotalAssets, 0, 0
         );
     }
 
@@ -354,9 +339,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         address _asset,
         address _vault,
         bytes32 _batchId,
-        uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
+        uint256 _totalAssets
     )
         external
         payable
@@ -373,9 +356,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             KSETTLER_INVALID_VAULT_TYPE
         );
 
-        _proposalId = kAssetRouter.proposeSettleBatch(
-            _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
-        );
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, _vault, _batchId, _totalAssets, 0, 0);
         _unlockReentrant();
     }
 
@@ -639,104 +620,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                 address(_metawallet), address(_kMinterAdapter), address(_vaultAdapter), _shareValue
             );
             _executeAdapterCall(_vaultAdapter, _executions);
-        }
-    }
-
-    /// @notice Calculates and processes fees for the vault
-    /// @dev Computes management and performance fees and transfers them to treasury
-    /// @param _vault Address of the vault to calculate fees for
-    /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
-    /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _fees(
-        IkStakingVault _vault,
-        IMinimalSmartAccount _dnVaultAdapter,
-        IERC4626 _dnMetaWallet
-    )
-        internal
-        returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
-    {
-        // Calculate fees and get timestamps
-        uint256 _feeShares;
-        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-            _calculateFees(_vault, _dnMetaWallet);
-
-        // If there are fees to charge, execute the transfer
-        if (_feeShares > 0) {
-            _executeFeeTransfer(_dnMetaWallet, _dnVaultAdapter, _feeShares);
-        }
-    }
-
-    /// @notice Calculates management and performance fees for the vault
-    /// @dev Determines if fees are due and calculates the total fee shares
-    /// @param _vault Address of the vault to calculate fees for
-    /// @param _dnMetaWallet Address of the metawallet
-    /// @return _feeShares Total number of fee shares to charge
-    /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
-    /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _calculateFees(
-        IkStakingVault _vault,
-        IERC4626 _dnMetaWallet
-    )
-        internal
-        view
-        returns (uint256 _feeShares, uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
-    {
-        // Get next fee timestamps from vault reader
-        uint256 _managementFeeTimestamp = _vault.nextManagementFeeTimestamp();
-        uint256 _performanceFeeTimestamp = _vault.nextPerformanceFeeTimestamp();
-
-        // Get calculated fees from vault reader
-        uint256 _totalAssets = _vault.totalAssets();
-
-        (uint256 _managementFee, uint256 _performanceFee,) =
-            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply(), block.timestamp);
-
-        uint256 feeAssets;
-        // Check if management fee is due
-        if (zeroFloorSub(block.timestamp, _managementFeeTimestamp) > 0) {
-            feeAssets += _managementFee;
-            _lastFeesChargedDateManagement = uint64(block.timestamp);
-        }
-
-        // Check if performance fee is due
-        if (zeroFloorSub(block.timestamp, _performanceFeeTimestamp) > 0) {
-            feeAssets += _performanceFee;
-            _lastFeesChargedDatePerformance = uint64(block.timestamp);
-        }
-
-        _feeShares = _dnMetaWallet.convertToShares(feeAssets);
-    }
-
-    /// @notice Executes the transfer of fee shares to the treasury
-    /// @dev Transfers calculated fee shares from the meta-wallet to the treasury
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @param _feeShares Number of fee shares to transfer
-    function _executeFeeTransfer(
-        IERC4626 _dnMetaWallet,
-        IMinimalSmartAccount _dnVaultAdapter,
-        uint256 _feeShares
-    )
-        internal
-    {
-        // Get treasury address from registry
-        address _treasury = registry.getTreasury();
-
-        // Generate execution data for fee transfer
-        Execution[] memory _executions =
-            ExecutionDataLibrary.getTransferExecutionData(address(_dnMetaWallet), _treasury, _feeShares);
-
-        // Execute the transfer through the DN vault adapter
-        _executeAdapterCall(_dnVaultAdapter, _executions);
-    }
-
-    /// @dev Returns `max(0, x - y)`. Alias for `saturatingSub`.
-    function zeroFloorSub(uint256 _x, uint256 _y) internal pure returns (uint256 _z) {
-        /// @solidity memory-safe-assembly
-        assembly {
-            _z := mul(gt(_x, _y), sub(_x, _y))
         }
     }
 

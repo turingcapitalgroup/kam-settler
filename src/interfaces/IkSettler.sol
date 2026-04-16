@@ -80,7 +80,7 @@ interface IkSettler {
 
     /// @notice Closes a delta-neutral vault batch and initiates settlement
     /// @dev This function handles the complete settlement process for DN vault batches,
-    ///      including rebalancing, fee calculation, asset netting, and profit distribution.
+    ///      including rebalancing, asset netting, and profit distribution.
     ///      All profit is distributed: insurance (up to target) -> treasury -> vault adapter.
     ///      Atomically settles the MetaWallet's virtualTotalAssets before computing depeg,
     ///      so that profit distribution reflects real strategy yield.
@@ -116,21 +116,17 @@ interface IkSettler {
     function executeSettleBatch(bytes32 _proposalId) external payable;
 
     /// @notice Proposes a settlement batch through the kAssetRouter
-    /// @dev Proposes a settlement batch through the kAssetRouter with fee information
+    /// @dev Proposes a settlement batch through the kAssetRouter
     /// @param _asset The asset address for the settlement
     /// @param _vault The vault address for the settlement
     /// @param _batchId The batch ID for the settlement
     /// @param _totalAssets The total assets for the settlement
-    /// @param _lastFeesChargedManagement The timestamp of last management fee charge
-    /// @param _lastFeesChargedPerformance The timestamp of last performance fee charge
     /// @return _proposalId The proposal ID for the settlement
     function proposeSettleBatch(
         address _asset,
         address _vault,
         bytes32 _batchId,
-        uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
+        uint256 _totalAssets
     )
         external
         payable

@@ -67,8 +67,6 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         BETHAVaultAdapterUSDC.grantRoles(address(users.relayer), 2);
         vm.stopPrank();
 
-        _disableFees();
-
         // Setup param checker for alpha/beta adapters
         vm.startPrank(users.admin);
         paramChecker.setAllowedSpender(address(metawalletUSDC), address(ALPHAVaultAdapterUSDC), true);
@@ -166,14 +164,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(
-            tokens.usdc,
-            address(alphaVault),
-            batchId,
-            totalAssets, // Pass actual total assets
-            0, // lastFeesChargedManagement
-            0 // lastFeesChargedPerformance
-        );
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets);
 
         IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
         assertEq(proposal.vault, address(alphaVault), "Proposal vault mismatch");
@@ -222,7 +213,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets1 = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId1 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId1, totalAssets1, 0, 0);
+        bytes32 proposalId1 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId1, totalAssets1);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId1);
@@ -248,7 +239,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets2 = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId2 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, totalAssets2, 0, 0);
+        bytes32 proposalId2 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, totalAssets2);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId2);
@@ -303,7 +294,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets = IVaultAdapter(address(BETHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
@@ -334,7 +325,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         settler.closeVaultBatch(address(betaVault), batchId, true);
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
@@ -385,7 +376,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
 
         uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
@@ -425,7 +416,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         // Propose settlement
         uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets);
 
         // Guardian cancels the proposal (removes from pending, does NOT add to executed)
         vm.prank(users.guardian);
@@ -461,18 +452,5 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
             vm.prank(users.relayer);
             assetRouter.executeSettleBatch(minterProposalId);
         }
-    }
-
-    /// @notice Disable fees for cleaner testing
-    function _disableFees() internal {
-        vm.startPrank(users.admin);
-        alphaVault.setManagementFee(0);
-        alphaVault.setPerformanceFee(0);
-        betaVault.setManagementFee(0);
-        betaVault.setPerformanceFee(0);
-        vm.stopPrank();
-
-        vm.prank(users.admin);
-        registry.setHurdleRate(tokens.usdc, 0);
     }
 }

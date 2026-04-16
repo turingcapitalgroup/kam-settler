@@ -10,7 +10,6 @@ contract kSettlerInvariants is kSettlerSetUp {
         _setUpSettlerHandler();
         _setUnlimitedBatchLimits();
         _setMaxTotalAssets();
-        _setUpVaultFees(dnVault);
         _setUpInstitutionalMint();
     }
 

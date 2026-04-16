@@ -7,7 +7,6 @@ import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { console2 } from "forge-std/console2.sol";
 
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
-import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { BaseVaultTest, DeploymentBaseTest } from "kam/test/utils/BaseVaultTest.sol";
 import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
@@ -24,9 +23,6 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
     kSettlerHandler public settlerHandler;
     kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
-
-    uint16 public constant PERFORMANCE_FEE = 2000; // 20%
-    uint16 public constant MANAGEMENT_FEE = 100; // 1%
 
     function _setUp() internal {
         // Point to kam-v1's deployments folder which has the complete config
@@ -147,13 +143,6 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         bytes4[] memory selectors = settlerHandler.getEntryPoints();
         targetSelector(FuzzSelector({ addr: address(settlerHandler), selectors: selectors }));
         vm.label(address(settlerHandler), "kSettlerHandler");
-    }
-
-    function _setUpVaultFees(IkStakingVault vault) internal {
-        vm.startPrank(users.admin);
-        vault.setPerformanceFee(PERFORMANCE_FEE);
-        vault.setManagementFee(MANAGEMENT_FEE);
-        vm.stopPrank();
     }
 
     function _getMinterActors() internal view returns (address[] memory) {

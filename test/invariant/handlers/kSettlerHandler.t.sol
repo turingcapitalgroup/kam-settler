@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { BaseHandler } from "kam/test/invariant/handlers/BaseHandler.t.sol";
 import { AddressSet, LibAddressSet } from "kam/test/invariant/helpers/AddressSet.sol";
 import { Bytes32Set, LibBytes32Set } from "kam/test/invariant/helpers/Bytes32Set.sol";
@@ -85,10 +84,6 @@ contract kSettlerHandler is BaseHandler {
     uint256 public dnActualSharePrice;
     int256 public dnSharePriceDelta;
 
-    // Fee tracking
-    uint256 lastFeesChargedManagement;
-    uint256 lastFeesChargedPerformance;
-
     constructor(
         address _settler,
         address _kMinter,
@@ -121,9 +116,6 @@ contract kSettlerHandler is BaseHandler {
         for (uint256 i = 0; i < _minterActors.length; i++) {
             minterActors.add(_minterActors[i]);
         }
-
-        lastFeesChargedManagement = 1;
-        lastFeesChargedPerformance = 1;
     }
 
     // //////////////////////////////////////////////////////////////
@@ -355,20 +347,11 @@ contract kSettlerHandler is BaseHandler {
             if (totalRequestedShares != 0) {
                 uint256 netRequestedShares = totalRequestedShares.fullMulDiv(totalNetAssets, totalAssets);
                 expectedSharesToBurn = totalRequestedShares - netRequestedShares;
-                uint256 feeAssets = VaultMathLib.convertToAssetsWithAssetsAndSupply(
-                    expectedSharesToBurn, dnExpectedTotalAssets, dnExpectedSupply
-                );
-                if (feeAssets != 0) {
-                    dnExpectedTotalAssets -= feeAssets;
-                }
             }
 
             dnExpectedSupply -= expectedSharesToBurn;
-            (,, uint256 expectedFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
-                dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
-            );
             dnActualTotalAssets = dnVault.totalAssets();
-            dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedFees;
+            dnExpectedNetTotalAssets = dnExpectedTotalAssets;
             dnActualNetTotalAssets = dnVault.totalNetAssets();
 
             uint256 shares = 10 ** dnVault.decimals();
@@ -540,10 +523,7 @@ contract kSettlerHandler is BaseHandler {
         dnActualTotalAssets = dnVault.totalAssets();
         dnExpectedSupply += sharesToMint;
         dnActualSupply = dnVault.totalSupply();
-        (,, uint256 expectedNewFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
-            dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
-        );
-        dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
+        dnExpectedNetTotalAssets = dnExpectedTotalAssets;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);
@@ -583,10 +563,7 @@ contract kSettlerHandler is BaseHandler {
         dnActualSupply = dnVault.totalSupply();
         dnExpectedTotalAssets -= totalKTokensNet;
         dnActualTotalAssets = dnVault.totalAssets();
-        (,, uint256 expectedNewFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
-            dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
-        );
-        dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
+        dnExpectedNetTotalAssets = dnExpectedTotalAssets;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);
@@ -627,8 +604,7 @@ contract kSettlerHandler is BaseHandler {
     function settler_advanceTime(uint256 amount) public {
         amount = bound(amount, 0, 30 days);
         vm.warp(block.timestamp + amount);
-        (,, uint256 totalFees) = dnVault.computeLastBatchFees();
-        dnExpectedNetTotalAssets = dnExpectedTotalAssets - totalFees;
+        dnExpectedNetTotalAssets = dnExpectedTotalAssets;
         dnActualNetTotalAssets = dnVault.totalNetAssets();
     }
 

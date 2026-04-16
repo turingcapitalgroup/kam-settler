@@ -63,8 +63,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.prank(users.owner);
         DNVaultAdapterUSDC.grantRoles(address(users.relayer), 2);
 
-        _setupTestFees();
-
         vm.stopPrank();
         vm.prank(users.admin);
         paramChecker.setAllowedSpender(address(metawalletUSDC), address(DNVaultAdapterUSDC), true);
@@ -258,7 +256,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_settler_delta_neutral_kminter_profit() public {
-        _setFeesToZero();
         _disableProfitDistribution();
         uint256 metaWalletProfit = 200e6;
         uint256 depositAmount = 50e6;
@@ -345,17 +342,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         return int256(_actualKMinterAssets) - int256(_expectedKMinterAssets);
     }
 
-    function _setFeesToZero() internal {
-        vm.startPrank(users.admin);
-        vault.setManagementFee(0);
-        vault.setPerformanceFee(0);
-        vault.setHardHurdleRate(false);
-        vm.stopPrank();
-
-        vm.prank(users.admin);
-        registry.setHurdleRate(tokens.usdc, 0);
-    }
-
     function _disableProfitDistribution() internal {
         vm.stopPrank();
         vm.startPrank(users.admin);
@@ -387,7 +373,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_settler_profit_distribution_to_insurance() public {
-        _setFeesToZero();
         uint16 insuranceBps = 1000;
         _setupProfitDistribution(insuranceBps, 0);
 
@@ -454,7 +439,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_settler_profit_distribution_to_treasury() public {
-        _setFeesToZero();
         uint16 treasuryBps = 2000;
         _setupProfitDistribution(0, treasuryBps);
 
@@ -512,7 +496,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_settler_profit_distribution_insurance_and_treasury() public {
-        _setFeesToZero();
         uint16 insuranceBps = 1;
         uint16 treasuryBps = 2000;
         _setupProfitDistribution(insuranceBps, treasuryBps);
@@ -588,7 +571,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_settler_dn_batch_all_profit_distributed() public {
-        _setFeesToZero();
         _disableProfitDistribution();
 
         uint256 metaWalletProfit = 200e6;
@@ -649,7 +631,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_settler_liquidate_insurance() public {
-        _setFeesToZero();
         uint16 insuranceBps = 1000;
         _setupProfitDistribution(insuranceBps, 0);
 
