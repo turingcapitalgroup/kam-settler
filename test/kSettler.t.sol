@@ -719,6 +719,77 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertEq(insuranceSharesAfter, 0);
     }
 
+    function test_settler_zero_supply_profit_distributed_to_insurance_and_treasury() public {
+        uint16 insuranceBps = 0; // No insurance to ensure profit reaches treasury
+        uint16 treasuryBps = 2000;
+        _setupProfitDistribution(insuranceBps, treasuryBps);
+
+        uint256 metaWalletProfit = 200e6;
+
+        // Setup: run kMinter batch (no DN stakers yet — vault has zero supply)
+        test_settler_kminter_netted_positive();
+
+        // At this point, the DN vault has totalSupply == 0
+        assertEq(vault.totalSupply(), 0);
+
+        // Mint profit into the metawallet (simulates strategy yield)
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
+        require(success);
+
+        // Capture pre-state
+        (address treasury,,,) = registry.getSettlementConfig();
+        uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
+        uint256 dnAdapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+
+        // Close DN batch — with zero supply, profit should still go to insurance + treasury
+        vm.startPrank(users.relayer);
+        uint256 _totalAssets = tokens.usdc.balanceOf(address(metawalletUSDC));
+        bytes32 _rootHash = keccak256(abi.encodePacked(address(metawalletUSDC), _totalAssets));
+        bytes32 proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, _totalAssets, _rootHash);
+        vm.stopPrank();
+
+        uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
+        uint256 dnAdapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+
+        // Treasury should have received shares (its BPS cut + residual from zero supply)
+        assertGt(treasuryBalanceAfter, treasuryBalanceBefore);
+
+        // DN vault adapter should NOT have received any profit shares (zero supply guard)
+        // The residual that would have gone to vault adapter is routed to treasury instead
+        assertEq(dnAdapterBalanceAfter, dnAdapterBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+    }
+
+    function test_settler_zero_supply_profit_all_to_treasury_when_no_insurance() public {
+        uint16 treasuryBps = 2000;
+        _setupProfitDistribution(0, treasuryBps);
+
+        uint256 metaWalletProfit = 200e6;
+
+        // Setup: run kMinter batch (no DN stakers yet — vault has zero supply)
+        test_settler_kminter_netted_positive();
+
+        assertEq(vault.totalSupply(), 0);
+
+        (bool success,) = tokens.usdc
+        .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
+        require(success);
+
+        (address treasury,,,) = registry.getSettlementConfig();
+        uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
+
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
+
+        // Treasury should have received both its BPS cut and the residual
+        assertGt(treasuryBalanceAfter, treasuryBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+    }
+
     function _setupInsurancePermissions(address insurance) internal {
         vm.stopPrank();
 

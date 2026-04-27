@@ -226,22 +226,23 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Close the batch in the vault
         _vault.closeBatch(_batchInfo._batchId, true);
 
-        // Do not send profit when total supply is zero, to avoid shares inflation
-        if (_vault.totalSupply() != 0) {
-            if (_depeg > 0) {
-                // PROFIT: positive depeg means kMinter has more assets than expected (surplus)
-                // Distribute profit: insurance -> treasury -> vault adapter
-                uint256 _profitAssets = uint256(_depeg);
-                uint256 _sharesToVaultAdapter = _distributeProfitShares(
-                    _metawallet,
-                    _kMinterAdapter,
-                    _profitAssets,
-                    true, // isVaultSettlement
-                    _asset
-                );
+        bool _hasSupply = _vault.totalSupply() != 0;
 
-                // Transfer remaining shares to vault adapter if any
-                if (_sharesToVaultAdapter > 0) {
+        if (_depeg > 0) {
+            // PROFIT: positive depeg means kMinter has more assets than expected (surplus)
+            // Distribute profit: insurance -> treasury -> vault adapter (or treasury if zero supply)
+            uint256 _profitAssets = uint256(_depeg);
+            uint256 _sharesToVaultAdapter = _distributeProfitShares(
+                _metawallet,
+                _kMinterAdapter,
+                _profitAssets,
+                true, // isVaultSettlement
+                _asset
+            );
+
+            if (_sharesToVaultAdapter > 0) {
+                if (_hasSupply) {
+                    // Transfer remaining shares to vault adapter
                     require(
                         _metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter))
                             >= _sharesToVaultAdapter,
@@ -254,16 +255,23 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                         _vaultAdapter,
                         _sharesToVaultAdapter
                     );
+                } else {
+                    // No stakers: route residual to treasury to avoid stranding value on kMinter adapter.
+                    // This prevents yield from being permanently lost when the vault has zero supply.
+                    (address _treasury,,,) = registry.getSettlementConfig();
+                    if (_treasury != address(0)) {
+                        _executeShareTransfer(_metawallet, _kMinterAdapter, _treasury, _sharesToVaultAdapter);
+                    }
                 }
-            } else if (_depeg < 0) {
-                // LOSS: negative depeg means kMinter needs more assets (deficit)
-                // Transfer from DN adapter to kMinter adapter (existing behavior)
-                uint256 _shareValue = _metawallet.convertToShares(uint256(-_depeg));
-                while (_metawallet.convertToAssets(_shareValue) < uint256(-_depeg)) {
-                    _shareValue += 1;
-                }
-                _executeRebalanceTransfer(true, _metawallet, _kMinterAdapter, _vaultAdapter, _shareValue);
             }
+        } else if (_depeg < 0 && _hasSupply) {
+            // LOSS: negative depeg means kMinter needs more assets (deficit)
+            // Only transfer from vault adapter when there are stakers to bear the loss
+            uint256 _shareValue = _metawallet.convertToShares(uint256(-_depeg));
+            while (_metawallet.convertToAssets(_shareValue) < uint256(-_depeg)) {
+                _shareValue += 1;
+            }
+            _executeRebalanceTransfer(true, _metawallet, _kMinterAdapter, _vaultAdapter, _shareValue);
         }
 
         // Calculate final asset data for settlement
