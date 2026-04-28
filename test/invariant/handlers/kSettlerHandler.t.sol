@@ -12,6 +12,7 @@ import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkMinter } from "kam/src/interfaces/IkMinter.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { BaseVaultTypes } from "kam/src/kStakingVault/types/BaseVaultTypes.sol";
+import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { kSettler } from "src/kSettler.sol";
 
