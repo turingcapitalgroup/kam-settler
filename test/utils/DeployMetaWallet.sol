@@ -215,6 +215,9 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         pc.setAllowedReceiver(real, address(ALPHAVaultAdapterUSDC), true);
         pc.setAllowedReceiver(real, address(BETHAVaultAdapterUSDC), true);
         pc.setAllowedReceiver(real, address(wallet), true);
+        (address _treasury, address _insurance,,) = registry.getSettlementConfig();
+        pc.setAllowedReceiver(real, _treasury, true);
+        pc.setAllowedReceiver(real, _insurance, true);
 
         // Sources (for transferFrom)
         pc.setAllowedSource(real, address(minterAdapterUSDC), true);
