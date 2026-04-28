@@ -64,7 +64,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @notice Admin role for authorized operations
     uint256 internal constant ADMIN_ROLE = _ROLE_0;
 
-    /// @notice Emergency admin role for emergency operations
+    /// @notice Relayer role for settlement automation
     uint256 internal constant RELAYER_ROLE = _ROLE_1;
 
     /*//////////////////////////////////////////////////////////////
@@ -107,9 +107,29 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkSettler
+    function grantAdminRole(address _admin) external {
+        _checkOwner();
+        require(_admin != address(0), KSETTLER_ADDRESS_ZERO);
+        _grantRoles(_admin, ADMIN_ROLE);
+    }
+
+    /// @inheritdoc IkSettler
+    function revokeAdminRole(address _admin) external {
+        _checkOwner();
+        _removeRoles(_admin, ADMIN_ROLE);
+    }
+
+    /// @inheritdoc IkSettler
     function grantRelayerRole(address _relayer) external payable {
         _checkRoles(ADMIN_ROLE);
+        require(_relayer != address(0), KSETTLER_ADDRESS_ZERO);
         _grantRoles(_relayer, RELAYER_ROLE);
+    }
+
+    /// @inheritdoc IkSettler
+    function revokeRelayerRole(address _relayer) external payable {
+        _checkRoles(ADMIN_ROLE);
+        _removeRoles(_relayer, RELAYER_ROLE);
     }
 
     /*//////////////////////////////////////////////////////////////

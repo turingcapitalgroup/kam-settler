@@ -74,9 +74,29 @@ interface IkSettler {
                               FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice grants the _relayer address the relayer role
-    /// @param _relayer address to be granted the relayer role
+    /*//////////////////////////////////////////////////////////////
+                          ROLES MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Grants ADMIN_ROLE to an address
+    /// @dev Only callable by contract owner. Reverts on zero address.
+    /// @param _admin Admin role recipient
+    function grantAdminRole(address _admin) external;
+
+    /// @notice Revokes ADMIN_ROLE from an address
+    /// @dev Only callable by contract owner
+    /// @param _admin Address to strip of admin privileges
+    function revokeAdminRole(address _admin) external;
+
+    /// @notice Grants RELAYER_ROLE to an address
+    /// @dev Only callable by addresses holding ADMIN_ROLE. Reverts on zero address.
+    /// @param _relayer Relayer role recipient
     function grantRelayerRole(address _relayer) external payable;
+
+    /// @notice Revokes RELAYER_ROLE from an address
+    /// @dev Only callable by addresses holding ADMIN_ROLE
+    /// @param _relayer Address to strip of relayer privileges
+    function revokeRelayerRole(address _relayer) external payable;
 
     /// @notice Closes a delta-neutral vault batch and initiates settlement
     /// @dev This function handles the complete settlement process for DN vault batches,

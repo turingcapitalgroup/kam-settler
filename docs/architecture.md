@@ -195,3 +195,30 @@ When depeg is positive (kMinter's actual MetaWallet assets exceed expected asset
 
 Insurance and treasury addresses and basis points are read from the registry via `getSettlementConfig()`.
 
+---
+
+## Role Management
+
+The kSettler uses Solady's `OptimizedOwnableRoles` for role-based access control. Each role's revoke authority mirrors its grant authority (TOB-KAM-32 finding #3), so revocation is at least as strong as the original grant.
+
+| Role | Granted by | Revoked by |
+|------|------------|------------|
+| OWNER | constructor (`_initializeOwner`) | Solady-inherited `transferOwnership` / `renounceOwnership` |
+| ADMIN | constructor + `grantAdminRole` (OWNER-gated) | `revokeAdminRole` (OWNER-gated) |
+| RELAYER | constructor + `grantRelayerRole` (ADMIN-gated) | `revokeRelayerRole` (ADMIN-gated) |
+
+### Function surface
+
+```solidity
+// OWNER-gated
+function grantAdminRole(address _admin) external;
+function revokeAdminRole(address _admin) external;
+
+// ADMIN-gated
+function grantRelayerRole(address _relayer) external payable;
+function revokeRelayerRole(address _relayer) external payable;
+```
+
+`grantAdminRole` and `grantRelayerRole` revert with `KS3` (zero-address) if the recipient is `address(0)`. The corresponding revoke functions are no-ops if the address does not currently hold the role (Solady semantics).
+
+Solady's inherited `grantRoles(addr, mask)` and `revokeRoles(addr, mask)` (both `onlyOwner`) remain accessible as an emergency escape hatch — same convention as the kRegistry contract in the wider KAM repo.

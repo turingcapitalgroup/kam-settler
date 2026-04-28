@@ -7,6 +7,7 @@ import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
 import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkRegistry } from "kam/src/interfaces/IkRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
+import { Ownable } from "kam/src/vendor/solady/auth/Ownable.sol";
 import { MockERC4626 } from "kam/test/mocks/MockERC4626.sol";
 import { BaseVaultTest, DeploymentBaseTest, IkStakingVault, SafeTransferLib } from "kam/test/utils/BaseVaultTest.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
@@ -16,6 +17,7 @@ import { Execution, ExecutionLib } from "minimal-smart-account/libraries/Executi
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
+import { KSETTLER_ADDRESS_ZERO } from "src/errors/Errors.sol";
 import { kSettler } from "src/kSettler.sol";
 import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
@@ -813,5 +815,116 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         guardianModule.setAllowedSelector(insurance, address(metawalletUSDC), 0, redeemSelector, true);
 
         vm.stopPrank();
+    }
+
+    /* //////////////////////////////////////////////////////////////
+                TOB-KAM-32 #3: ROLE AUTHORITY MATRIX
+    //////////////////////////////////////////////////////////////*/
+
+    // Bitmasks must mirror kSettler.sol's role layout:
+    //   ADMIN_ROLE   = _ROLE_0 = 1 << 0 = 1
+    //   RELAYER_ROLE = _ROLE_1 = 1 << 1 = 2
+    uint256 internal constant _TEST_ADMIN_ROLE = 1;
+    uint256 internal constant _TEST_RELAYER_ROLE = 2;
+
+    // ---------- grantRelayerRole (existing — regression coverage) ----------
+
+    function test_grantRelayerRole_byAdmin_succeeds() public {
+        address newRelayer = makeAddr("newRelayer");
+        vm.prank(users.admin);
+        settler.grantRelayerRole(newRelayer);
+        assertTrue(settler.hasAnyRole(newRelayer, _TEST_RELAYER_ROLE));
+    }
+
+    function test_grantRelayerRole_byNonAdmin_reverts() public {
+        address newRelayer = makeAddr("newRelayer");
+        vm.prank(users.relayer); // has RELAYER but not ADMIN
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        settler.grantRelayerRole(newRelayer);
+    }
+
+    function test_grantRelayerRole_zeroAddress_reverts() public {
+        vm.prank(users.admin);
+        vm.expectRevert(bytes(KSETTLER_ADDRESS_ZERO));
+        settler.grantRelayerRole(address(0));
+    }
+
+    // ---------- revokeRelayerRole (NEW — ADMIN-gated) ----------
+
+    function test_revokeRelayerRole_byAdmin_succeeds() public {
+        address newRelayer = makeAddr("newRelayer");
+        vm.prank(users.admin);
+        settler.grantRelayerRole(newRelayer);
+        assertTrue(settler.hasAnyRole(newRelayer, _TEST_RELAYER_ROLE));
+
+        vm.prank(users.admin);
+        settler.revokeRelayerRole(newRelayer);
+        assertFalse(settler.hasAnyRole(newRelayer, _TEST_RELAYER_ROLE));
+    }
+
+    function test_revokeRelayerRole_byNonAdmin_reverts() public {
+        address newRelayer = makeAddr("newRelayer");
+        vm.prank(users.admin);
+        settler.grantRelayerRole(newRelayer);
+
+        vm.prank(users.relayer);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        settler.revokeRelayerRole(newRelayer);
+    }
+
+    // ---------- grantAdminRole (NEW — OWNER-gated) ----------
+
+    function test_grantAdminRole_byOwner_succeeds() public {
+        address newAdmin = makeAddr("newAdmin");
+        vm.prank(users.owner);
+        settler.grantAdminRole(newAdmin);
+        assertTrue(settler.hasAnyRole(newAdmin, _TEST_ADMIN_ROLE));
+    }
+
+    function test_grantAdminRole_byAdmin_reverts() public {
+        // Test fixture conflates users.owner == users.admin in localhost config,
+        // so to genuinely test "admin without owner privileges", grant ADMIN to a
+        // fresh address and prank as that address.
+        address freshAdmin = makeAddr("freshAdmin");
+        vm.prank(users.owner);
+        settler.grantAdminRole(freshAdmin);
+
+        address newAdmin = makeAddr("newAdmin");
+        vm.prank(freshAdmin);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        settler.grantAdminRole(newAdmin);
+    }
+
+    function test_grantAdminRole_zeroAddress_reverts() public {
+        vm.prank(users.owner);
+        vm.expectRevert(bytes(KSETTLER_ADDRESS_ZERO));
+        settler.grantAdminRole(address(0));
+    }
+
+    // ---------- revokeAdminRole (NEW — OWNER-gated) ----------
+
+    function test_revokeAdminRole_byOwner_succeeds() public {
+        address newAdmin = makeAddr("newAdmin");
+        vm.prank(users.owner);
+        settler.grantAdminRole(newAdmin);
+        assertTrue(settler.hasAnyRole(newAdmin, _TEST_ADMIN_ROLE));
+
+        vm.prank(users.owner);
+        settler.revokeAdminRole(newAdmin);
+        assertFalse(settler.hasAnyRole(newAdmin, _TEST_ADMIN_ROLE));
+    }
+
+    function test_revokeAdminRole_byAdmin_reverts() public {
+        // Test fixture conflates users.owner == users.admin in localhost config,
+        // so to genuinely test "admin without owner privileges", grant ADMIN to a
+        // fresh address and prank as that address. Even an existing admin cannot
+        // revoke another admin — only owner can.
+        address freshAdmin = makeAddr("freshAdmin");
+        vm.prank(users.owner);
+        settler.grantAdminRole(freshAdmin);
+
+        vm.prank(freshAdmin);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        settler.revokeAdminRole(freshAdmin);
     }
 }
