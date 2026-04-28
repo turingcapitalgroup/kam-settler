@@ -159,10 +159,12 @@ interface IkSettler {
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable;
 
     /// @notice Liquidates insurance's metawallet shares to underlying assets
-    /// @dev Calls redeem through the insurance smart account.
-    ///      After execution, insurance will hold underlying assets instead of metawallet shares.
-    /// @param _asset The asset for which to liquidate insurance shares
-    function liquidateInsurance(address _asset) external payable;
+    /// @dev Calls redeem through the insurance smart account. The caller must specify
+    ///      the metawallet directly so resolution is constant-time and cannot misroute
+    ///      between assets when insurance backs more than one (TOB-KAM-38).
+    /// @param _asset The underlying asset for which to liquidate insurance shares
+    /// @param _metawallet The ERC4626 metawallet to redeem from. Must match _asset.
+    function liquidateInsurance(address _asset, address _metawallet) external payable;
 
     /*//////////////////////////////////////////////////////////////
                               VIEWS

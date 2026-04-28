@@ -17,7 +17,7 @@ import { Execution, ExecutionLib } from "minimal-smart-account/libraries/Executi
 import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 import { DeploykSettlerScript } from "script/DeploykSettler.s.sol";
 import { OptimizedFixedPointMathLib } from "solady/utils/OptimizedFixedPointMathLib.sol";
-import { KSETTLER_ADDRESS_ZERO } from "src/errors/Errors.sol";
+import { KSETTLER_ADDRESS_ZERO, KSETTLER_ASSET_MISMATCH } from "src/errors/Errors.sol";
 import { kSettler } from "src/kSettler.sol";
 import { DeployMetaWallet } from "test/utils/DeployMetaWallet.sol";
 
@@ -682,7 +682,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         // Liquidate insurance - convert shares to underlying assets
         vm.startPrank(users.relayer);
-        settler.liquidateInsurance(tokens.usdc);
+        settler.liquidateInsurance(tokens.usdc, address(metawalletUSDC));
         vm.stopPrank();
 
         // Verify insurance now has assets instead of shares
@@ -713,7 +713,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         // Liquidate should return early without reverting
         vm.startPrank(users.relayer);
-        settler.liquidateInsurance(tokens.usdc);
+        settler.liquidateInsurance(tokens.usdc, address(metawalletUSDC));
         vm.stopPrank();
 
         // Verify nothing changed
@@ -906,5 +906,19 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.prank(freshAdmin);
         vm.expectRevert(Ownable.Unauthorized.selector);
         settler.revokeAdminRole(freshAdmin);
+    }
+
+    function test_liquidateInsurance_zeroMetawallet_reverts() public {
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes(KSETTLER_ADDRESS_ZERO));
+        settler.liquidateInsurance(tokens.usdc, address(0));
+    }
+
+    function test_liquidateInsurance_assetMismatch_reverts() public {
+        // metawalletUSDC.asset() is USDC; passing a different asset must revert.
+        address wrongAsset = makeAddr("wrongAsset");
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes(KSETTLER_ASSET_MISMATCH));
+        settler.liquidateInsurance(wrongAsset, address(metawalletUSDC));
     }
 }

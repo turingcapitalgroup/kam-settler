@@ -18,6 +18,7 @@ import { IVaultAdapter, IkAssetRouter, IkMinter, IkSettler, IkStakingVault, IkTo
 // Errors
 import {
     KSETTLER_ADDRESS_ZERO,
+    KSETTLER_ASSET_MISMATCH,
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
     KSETTLER_INSUFFICIENT_BALANCE,
@@ -318,44 +319,27 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     }
 
     /// @inheritdoc IkSettler
-    function liquidateInsurance(address _asset) external payable {
+    function liquidateInsurance(address _asset, address _metawallet) external payable {
         _lockReentrant();
         _checkRoles(RELAYER_ROLE);
 
-        // Get insurance address from registry
+        require(_metawallet != address(0), KSETTLER_ADDRESS_ZERO);
+        require(IERC4626(_metawallet).asset() == _asset, KSETTLER_ASSET_MISMATCH);
+
         (, address _insurance,,) = registry.getSettlementConfig();
         require(_insurance != address(0), KSETTLER_ADDRESS_ZERO);
 
-        // Get the metawallet target for the insurance account
-        address[] memory _targets = registry.getExecutorTargets(_insurance);
-        require(_targets.length != 0, KSETTLER_ADDRESS_ZERO);
-
-        // Find the metawallet target (type METAWALLET = 0)
-        address _metawalletAddr;
-        for (uint256 i = 0; i < _targets.length; i++) {
-            if (registry.getTargetType(_targets[i]) == 0) {
-                _metawalletAddr = _targets[i];
-                break;
-            }
-        }
-        require(_metawalletAddr != address(0), KSETTLER_ADDRESS_ZERO);
-
-        IERC4626 _metawallet = IERC4626(_metawalletAddr);
-
-        // Get insurance's share balance
-        uint256 _shares = _metawallet.balanceOf(_insurance);
+        IERC4626 _metawalletContract = IERC4626(_metawallet);
+        uint256 _shares = _metawalletContract.balanceOf(_insurance);
         if (_shares == 0) {
             _unlockReentrant();
             return;
         }
 
-        uint256 _assetsValue = _metawallet.convertToAssets(_shares);
+        uint256 _assetsValue = _metawalletContract.convertToAssets(_shares);
 
-        // Build execution for redeem
         Execution[] memory _executions =
-            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _assetsValue);
-
-        // Execute through insurance smart account
+            ExecutionDataLibrary.getWithdrawExecutionData(_metawallet, _insurance, _insurance, _assetsValue);
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
 
         emit InsuranceLiquidated(_asset, _shares, _assetsValue);
