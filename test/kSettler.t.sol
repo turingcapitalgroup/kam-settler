@@ -817,17 +817,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
     }
 
-    /* //////////////////////////////////////////////////////////////
-                TOB-KAM-32 #3: ROLE AUTHORITY MATRIX
-    //////////////////////////////////////////////////////////////*/
-
-    // Bitmasks must mirror kSettler.sol's role layout:
-    //   ADMIN_ROLE   = _ROLE_0 = 1 << 0 = 1
-    //   RELAYER_ROLE = _ROLE_1 = 1 << 1 = 2
     uint256 internal constant _TEST_ADMIN_ROLE = 1;
     uint256 internal constant _TEST_RELAYER_ROLE = 2;
-
-    // ---------- grantRelayerRole (existing — regression coverage) ----------
 
     function test_grantRelayerRole_byAdmin_succeeds() public {
         address newRelayer = makeAddr("newRelayer");
@@ -838,7 +829,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
     function test_grantRelayerRole_byNonAdmin_reverts() public {
         address newRelayer = makeAddr("newRelayer");
-        vm.prank(users.relayer); // has RELAYER but not ADMIN
+        vm.prank(users.relayer);
         vm.expectRevert(Ownable.Unauthorized.selector);
         settler.grantRelayerRole(newRelayer);
     }
@@ -848,8 +839,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.expectRevert(bytes(KSETTLER_ADDRESS_ZERO));
         settler.grantRelayerRole(address(0));
     }
-
-    // ---------- revokeRelayerRole (NEW — ADMIN-gated) ----------
 
     function test_revokeRelayerRole_byAdmin_succeeds() public {
         address newRelayer = makeAddr("newRelayer");
@@ -872,8 +861,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         settler.revokeRelayerRole(newRelayer);
     }
 
-    // ---------- grantAdminRole (NEW — OWNER-gated) ----------
-
     function test_grantAdminRole_byOwner_succeeds() public {
         address newAdmin = makeAddr("newAdmin");
         vm.prank(users.owner);
@@ -882,9 +869,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_grantAdminRole_byAdmin_reverts() public {
-        // Test fixture conflates users.owner == users.admin in localhost config,
-        // so to genuinely test "admin without owner privileges", grant ADMIN to a
-        // fresh address and prank as that address.
+        // localhost fixture sets users.owner == users.admin, so prank a freshly-granted admin.
         address freshAdmin = makeAddr("freshAdmin");
         vm.prank(users.owner);
         settler.grantAdminRole(freshAdmin);
@@ -901,8 +886,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         settler.grantAdminRole(address(0));
     }
 
-    // ---------- revokeAdminRole (NEW — OWNER-gated) ----------
-
     function test_revokeAdminRole_byOwner_succeeds() public {
         address newAdmin = makeAddr("newAdmin");
         vm.prank(users.owner);
@@ -915,10 +898,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     function test_revokeAdminRole_byAdmin_reverts() public {
-        // Test fixture conflates users.owner == users.admin in localhost config,
-        // so to genuinely test "admin without owner privileges", grant ADMIN to a
-        // fresh address and prank as that address. Even an existing admin cannot
-        // revoke another admin — only owner can.
+        // localhost fixture sets users.owner == users.admin, so prank a freshly-granted admin.
         address freshAdmin = makeAddr("freshAdmin");
         vm.prank(users.owner);
         settler.grantAdminRole(freshAdmin);
