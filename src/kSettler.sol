@@ -484,11 +484,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Get basic batch information from vault reader
         (_batchInfo._batchId,, _batchInfo._isClosed, _batchInfo._isSettled) = _vault.getCurrentBatchInfo();
 
-        // Get deposited amount for this batch
-        (_batchInfo._deposited,) = kAssetRouter.getBatchIdBalances(address(_vault), _batchInfo._batchId);
-
-        // Get pending shares for this batch
-        _batchInfo._pendingShares = kAssetRouter.getRequestedShares(address(_vault), _batchInfo._batchId);
+        // Get deposited amount and pending shares in a single router call.
+        // The previously-separate getRequestedShares read the same `requestedSharesInBatch`
+        // value that getBatchIdBalances returns as its second tuple element.
+        (_batchInfo._deposited, _batchInfo._pendingShares) =
+            kAssetRouter.getBatchIdBalances(address(_vault), _batchInfo._batchId);
     }
 
     /// @notice Calculates asset data for settlement
