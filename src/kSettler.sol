@@ -484,11 +484,11 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Get basic batch information from vault reader
         (_batchInfo._batchId,, _batchInfo._isClosed, _batchInfo._isSettled) = _vault.getCurrentBatchInfo();
 
-        // Get deposited amount for this batch
-        (_batchInfo._deposited,) = kAssetRouter.getBatchIdBalances(address(_vault), _batchInfo._batchId);
-
-        // Get pending shares for this batch
-        _batchInfo._pendingShares = kAssetRouter.getRequestedShares(address(_vault), _batchInfo._batchId);
+        // Get deposited amount and pending shares in a single router call.
+        // The previously-separate getRequestedShares read the same `requestedSharesInBatch`
+        // value that getBatchIdBalances returns as its second tuple element.
+        (_batchInfo._deposited, _batchInfo._pendingShares) =
+            kAssetRouter.getBatchIdBalances(address(_vault), _batchInfo._batchId);
     }
 
     /// @notice Calculates asset data for settlement
@@ -662,14 +662,14 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     function _getInsuranceDeficit(
         IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
-        address _asset
+        address _asset,
+        address _insurance,
+        uint16 _insuranceBps
     )
         internal
         view
         returns (uint256 _deficitAssets)
     {
-        (, address _insurance,, uint16 _insuranceBps) = registry.getSettlementConfig();
-
         if (_insurance == address(0) || _insuranceBps == 0) return 0;
 
         // Target based on kMinter's total assets
@@ -715,11 +715,14 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         uint256 _remainingShares = _profitShares;
 
-        // Get settlement config
-        (address _treasury, address _insurance, uint16 _treasuryBps,) = registry.getSettlementConfig();
+        // Get settlement config — read once and pass insurance fields to _getInsuranceDeficit
+        // so it does not re-read the same values from the registry.
+        (address _treasury, address _insurance, uint16 _treasuryBps, uint16 _insuranceBps) =
+            registry.getSettlementConfig();
 
         // 1. Insurance priority distribution
-        uint256 _insuranceDeficitAssets = _getInsuranceDeficit(_metawallet, _kMinterAdapter, _asset);
+        uint256 _insuranceDeficitAssets =
+            _getInsuranceDeficit(_metawallet, _kMinterAdapter, _asset, _insurance, _insuranceBps);
         uint256 _insuranceShares = 0;
 
         if (_insuranceDeficitAssets > 0 && _insurance != address(0)) {
