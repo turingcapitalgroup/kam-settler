@@ -66,7 +66,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     uint256 internal constant ADMIN_ROLE = _ROLE_0;
 
     /// @notice Relayer role for settlement automation
-    uint256 internal constant RELAYER_ROLE = _ROLE_1;
+    /// @dev Named SETTLER_RELAYER_ROLE to disambiguate from KAM's RELAYER_ROLE (_ROLE_3).
+    uint256 internal constant SETTLER_RELAYER_ROLE = _ROLE_1;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -100,7 +101,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         _initializeOwner(_owner);
         _grantRoles(_admin, ADMIN_ROLE);
-        _grantRoles(_relayer, RELAYER_ROLE);
+        _grantRoles(_relayer, SETTLER_RELAYER_ROLE);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -124,13 +125,13 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     function grantRelayerRole(address _relayer) external payable {
         _checkRoles(ADMIN_ROLE);
         require(_relayer != address(0), KSETTLER_ADDRESS_ZERO);
-        _grantRoles(_relayer, RELAYER_ROLE);
+        _grantRoles(_relayer, SETTLER_RELAYER_ROLE);
     }
 
     /// @inheritdoc IkSettler
     function revokeRelayerRole(address _relayer) external payable {
         _checkRoles(ADMIN_ROLE);
-        _removeRoles(_relayer, RELAYER_ROLE);
+        _removeRoles(_relayer, SETTLER_RELAYER_ROLE);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -140,7 +141,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId) {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         // Retrieve current batch information
         bytes32 _batchId = kMinter.getBatchId(_asset);
@@ -214,7 +215,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         returns (bytes32 _proposalId)
     {
         // Ensure only authorized relayers can call this function
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         // Get all required addresses for the asset
         IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
@@ -312,7 +313,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function executeSettleBatch(bytes32 _proposalId) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         kAssetRouter.executeSettleBatch(_proposalId);
         _unlockReentrant();
@@ -321,7 +322,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function liquidateInsurance(address _asset, address _metawallet) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         require(_metawallet != address(0), KSETTLER_ADDRESS_ZERO);
         require(IERC4626(_metawallet).asset() == _asset, KSETTLER_ASSET_MISMATCH);
@@ -358,7 +359,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         returns (bytes32 _proposalId)
     {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         // Only custodial vaults can use the generic proposeSettleBatch.
         // kMinter and DN vaults must settle through their dedicated functions.
@@ -375,7 +376,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         uint8 _vaultType = registry.getVaultType(_vault);
         require(
@@ -394,7 +395,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         require(!finalisedProposals[_proposalId], KSETTLER_PROPOSAL_ALREADY_FINALISED);
         finalisedProposals[_proposalId] = true;

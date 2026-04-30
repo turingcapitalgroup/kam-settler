@@ -40,7 +40,7 @@ contract GrantRelayerRoleScript is DeploymentManager {
         vm.stopBroadcast();
 
         // 5. Log result
-        console.log("  Granted RELAYER_ROLE to:", _newRelayer);
+        console.log("  Granted SETTLER_RELAYER_ROLE to:", _newRelayer);
         logExecutionEnd();
     }
 }
