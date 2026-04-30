@@ -818,13 +818,13 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     }
 
     uint256 internal constant _TEST_ADMIN_ROLE = 1;
-    uint256 internal constant _TEST_RELAYER_ROLE = 2;
+    uint256 internal constant _TEST_SETTLER_RELAYER_ROLE = 2;
 
     function test_grantRelayerRole_byAdmin_succeeds() public {
         address newRelayer = makeAddr("newRelayer");
         vm.prank(users.admin);
         settler.grantRelayerRole(newRelayer);
-        assertTrue(settler.hasAnyRole(newRelayer, _TEST_RELAYER_ROLE));
+        assertTrue(settler.hasAnyRole(newRelayer, _TEST_SETTLER_RELAYER_ROLE));
     }
 
     function test_grantRelayerRole_byNonAdmin_reverts() public {
@@ -844,11 +844,11 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         address newRelayer = makeAddr("newRelayer");
         vm.prank(users.admin);
         settler.grantRelayerRole(newRelayer);
-        assertTrue(settler.hasAnyRole(newRelayer, _TEST_RELAYER_ROLE));
+        assertTrue(settler.hasAnyRole(newRelayer, _TEST_SETTLER_RELAYER_ROLE));
 
         vm.prank(users.admin);
         settler.revokeRelayerRole(newRelayer);
-        assertFalse(settler.hasAnyRole(newRelayer, _TEST_RELAYER_ROLE));
+        assertFalse(settler.hasAnyRole(newRelayer, _TEST_SETTLER_RELAYER_ROLE));
     }
 
     function test_revokeRelayerRole_byNonAdmin_reverts() public {

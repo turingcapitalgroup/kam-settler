@@ -88,12 +88,12 @@ interface IkSettler {
     /// @param _admin Address to strip of admin privileges
     function revokeAdminRole(address _admin) external;
 
-    /// @notice Grants RELAYER_ROLE to an address
+    /// @notice Grants SETTLER_RELAYER_ROLE to an address
     /// @dev Only callable by addresses holding ADMIN_ROLE. Reverts on zero address.
     /// @param _relayer Relayer role recipient
     function grantRelayerRole(address _relayer) external payable;
 
-    /// @notice Revokes RELAYER_ROLE from an address
+    /// @notice Revokes SETTLER_RELAYER_ROLE from an address
     /// @dev Only callable by addresses holding ADMIN_ROLE
     /// @param _relayer Address to strip of relayer privileges
     function revokeRelayerRole(address _relayer) external payable;
