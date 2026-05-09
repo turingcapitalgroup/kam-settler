@@ -450,7 +450,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
 
         if (minterProposalId != bytes32(0)) {
             vm.prank(users.relayer);
-            assetRouter.executeSettleBatch(minterProposalId);
+            settler.executeSettleBatch(minterProposalId);
         }
     }
 }

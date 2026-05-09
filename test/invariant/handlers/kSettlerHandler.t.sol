@@ -12,7 +12,6 @@ import { IkAssetRouter } from "kam/src/interfaces/IkAssetRouter.sol";
 import { IkMinter } from "kam/src/interfaces/IkMinter.sol";
 import { IkStakingVault } from "kam/src/interfaces/IkStakingVault.sol";
 import { BaseVaultTypes } from "kam/src/kStakingVault/types/BaseVaultTypes.sol";
-import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
 import { kSettler } from "src/kSettler.sol";
 
@@ -343,7 +342,8 @@ contract kSettlerHandler is BaseHandler {
                 int256(dnExpectedTotalAssets) + netted + proposal.yield - int256(pendingStakeInBatch[proposal.batchId])
             );
 
-            (,,,,, uint256 totalAssets, uint256 totalNetAssets,,,) = dnVault.getBatchIdInfo(proposal.batchId);
+            (,,,, uint256 totalAssets,,,) = dnVault.getBatchIdInfo(proposal.batchId);
+            uint256 totalNetAssets = totalAssets;
             uint256 expectedSharesToBurn;
             if (totalRequestedShares != 0) {
                 uint256 netRequestedShares = totalRequestedShares.fullMulDiv(totalNetAssets, totalAssets);
@@ -353,7 +353,7 @@ contract kSettlerHandler is BaseHandler {
             dnExpectedSupply -= expectedSharesToBurn;
             dnActualTotalAssets = dnVault.totalAssets();
             dnExpectedNetTotalAssets = dnExpectedTotalAssets;
-            dnActualNetTotalAssets = dnVault.totalNetAssets();
+            dnActualNetTotalAssets = dnVault.totalAssets();
 
             uint256 shares = 10 ** dnVault.decimals();
             uint256 totalSupply_ = dnVault.totalSupply();
@@ -451,7 +451,7 @@ contract kSettlerHandler is BaseHandler {
 
         uint256 newTotalAssets = uint256(newTotalAssetsInt);
 
-        requested = VaultMathLib.convertToAssetsWithAssetsAndSupply(requested, newTotalAssets, dnVault.totalSupply());
+        requested = dnVault.convertToAssetsWithTotals(requested, newTotalAssets, dnVault.totalSupply());
         int256 netted = int256(deposited) - int256(requested);
 
         if (netted < 0 && netted.abs() > dnExpectedAdapterTotalAssets) {
@@ -501,15 +501,15 @@ contract kSettlerHandler is BaseHandler {
         bytes32 requestId = actorStakeRequests[currentActor].rand(requestSeedIndex);
         BaseVaultTypes.StakeRequest memory stakeRequest = dnVault.getStakeRequest(requestId);
         bytes32 batchId = stakeRequest.batchId;
-        (,, bool isSettled,,,, uint256 totalNetAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
+        (,, bool isSettled,, uint256 totalAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
+        uint256 totalNetAssets = totalAssets;
         if (!isSettled) {
             vm.expectRevert();
             dnVault.claimStakedShares(requestId);
             vm.stopPrank();
             return;
         }
-        uint256 sharesToMint =
-            VaultMathLib.convertToSharesWithAssetsAndSupply(stakeRequest.kTokenAmount, totalNetAssets, totalSupply);
+        uint256 sharesToMint = dnVault.convertToSharesWithTotals(stakeRequest.kTokenAmount, totalNetAssets, totalSupply);
         if (sharesToMint == 0) {
             vm.expectRevert(bytes("SV9"));
             dnVault.claimStakedShares(requestId);
@@ -525,7 +525,7 @@ contract kSettlerHandler is BaseHandler {
         dnExpectedSupply += sharesToMint;
         dnActualSupply = dnVault.totalSupply();
         dnExpectedNetTotalAssets = dnExpectedTotalAssets;
-        dnActualNetTotalAssets = dnVault.totalNetAssets();
+        dnActualNetTotalAssets = dnVault.totalAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);
         vm.stopPrank();
@@ -540,8 +540,8 @@ contract kSettlerHandler is BaseHandler {
         bytes32 requestId = actorUnstakeRequests[currentActor].rand(requestSeedIndex);
         BaseVaultTypes.UnstakeRequest memory unstakeRequest = dnVault.getUnstakeRequest(requestId);
         bytes32 batchId = unstakeRequest.batchId;
-        (,, bool isSettled,,, uint256 totalAssets, uint256 totalNetAssets, uint256 totalSupply,,) =
-            dnVault.getBatchIdInfo(batchId);
+        (,, bool isSettled,, uint256 totalAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
+        uint256 totalNetAssets = totalAssets;
         if (!isSettled) {
             vm.expectRevert();
             dnVault.claimUnstakedAssets(requestId);
@@ -549,7 +549,7 @@ contract kSettlerHandler is BaseHandler {
             return;
         }
         uint256 totalKTokensNet =
-            VaultMathLib.convertToAssetsWithAssetsAndSupply(unstakeRequest.stkTokenAmount, totalNetAssets, totalSupply);
+            dnVault.convertToAssetsWithTotals(unstakeRequest.stkTokenAmount, totalNetAssets, totalSupply);
         if (totalKTokensNet == 0) {
             vm.expectRevert(bytes("SV9"));
             dnVault.claimUnstakedAssets(requestId);
@@ -565,7 +565,7 @@ contract kSettlerHandler is BaseHandler {
         dnExpectedTotalAssets -= totalKTokensNet;
         dnActualTotalAssets = dnVault.totalAssets();
         dnExpectedNetTotalAssets = dnExpectedTotalAssets;
-        dnActualNetTotalAssets = dnVault.totalNetAssets();
+        dnActualNetTotalAssets = dnVault.totalAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);
         vm.stopPrank();
@@ -606,7 +606,7 @@ contract kSettlerHandler is BaseHandler {
         amount = bound(amount, 0, 30 days);
         vm.warp(block.timestamp + amount);
         dnExpectedNetTotalAssets = dnExpectedTotalAssets;
-        dnActualNetTotalAssets = dnVault.totalNetAssets();
+        dnActualNetTotalAssets = dnVault.totalAssets();
     }
 
     // //////////////////////////////////////////////////////////////

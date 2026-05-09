@@ -145,7 +145,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
 
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
         uint256 finalAdapterBalance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         assertEq(adapterBalanceAfter - finalAdapterBalance, requestAmount);
 
@@ -182,7 +182,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
 
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
         uint256 finalAdapterBalance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
         assertEq(adapterBalanceAfter - finalAdapterBalance, requestAmount);
 
@@ -205,7 +205,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -218,7 +218,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         requestId = vault.requestUnstake(users.alice, users.alice, requestAmount);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimUnstakedAssets(requestId);
@@ -333,7 +333,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
             vm.prank(users.guardian);
             assetRouter.acceptProposal(proposalId);
         }
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
     }
 
     function _getDepeg() internal view returns (int256) {
@@ -389,7 +389,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -455,7 +455,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -513,7 +513,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -586,7 +586,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -649,7 +649,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         vm.prank(users.alice);
         vault.claimStakedShares(requestId);
@@ -667,7 +667,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         // Close batch - this should distribute profit to insurance
         proposalId = _closeAndProposeDeltaNeutralBatch();
-        assetRouter.executeSettleBatch(proposalId);
+        _executeSettlement(proposalId);
 
         // Get insurance address and verify it has shares
         (, address insurance,,) = registry.getSettlementConfig();
@@ -812,9 +812,16 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         IExecutionGuardian guardianModule = IExecutionGuardian(address(registry));
 
         // Allow insurance to call redeem on the metawallet (targetType = 0 for METAWALLET)
-        guardianModule.setAllowedSelector(insurance, address(metawalletUSDC), 0, redeemSelector, true);
+        guardianModule.setAllowedSelector(
+            insurance, address(metawalletUSDC), IExecutionGuardian.TargetType.METAWALLET, redeemSelector, true
+        );
 
         vm.stopPrank();
+    }
+
+    function _executeSettlement(bytes32 _proposalId) internal {
+        vm.prank(users.relayer);
+        settler.executeSettleBatch(_proposalId);
     }
 
     uint256 internal constant _TEST_ADMIN_ROLE = 1;

@@ -183,7 +183,7 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
         bytes32 proposalId = settler.closeAndProposeMinterBatch(token);
 
         // Execute the settlement
-        assetRouter.executeSettleBatch(proposalId);
+        settler.executeSettleBatch(proposalId);
         vm.stopPrank();
 
         // Update handler ghost vars
