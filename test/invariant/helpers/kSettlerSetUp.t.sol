@@ -139,9 +139,13 @@ abstract contract kSettlerSetUp is StdInvariant, DeployMetaWallet {
             _vaultActors
         );
 
-        targetContract(address(settlerHandler));
+        // Whitelist exactly the fuzzed entry points. `targetContract` would otherwise expose
+        // every public function (including `set_*` setters and `seed_initializeDNState`) to
+        // the fuzzer, which would let it stamp random values onto our ghost vars and produce
+        // spurious invariant failures.
         bytes4[] memory selectors = settlerHandler.getEntryPoints();
         targetSelector(FuzzSelector({ addr: address(settlerHandler), selectors: selectors }));
+        targetContract(address(settlerHandler));
         vm.label(address(settlerHandler), "kSettlerHandler");
     }
 

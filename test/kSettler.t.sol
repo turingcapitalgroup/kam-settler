@@ -374,6 +374,76 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.stopPrank();
     }
 
+    /// @notice Computes the expected insurance/treasury share distribution for a DN profit settlement
+    /// @dev Mirrors the on-chain logic in `_distributeProfitShares` so tests can assert exact amounts.
+    ///      Isolated into its own internal helper to keep callers within EVM stack limits.
+    /// @param insuranceBps Insurance basis points configured in the registry
+    /// @param treasuryBps Treasury basis points configured in the registry
+    /// @param insuranceBalanceBefore Pre-settlement metawallet shares held by the insurance address
+    function _computeExpectedDistribution(
+        uint16 insuranceBps,
+        uint16 treasuryBps,
+        uint256 insuranceBalanceBefore
+    )
+        internal
+        view
+        returns (uint256 expectedInsuranceShares, uint256 expectedTreasuryShares)
+    {
+        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 valueBefore = metawalletUSDC.convertToAssets(kMinterShares);
+        uint256 newTotal = tokens.usdc.balanceOf(address(metawalletUSDC));
+        uint256 mwSupply = metawalletUSDC.totalSupply();
+        uint256 valueAfter = (kMinterShares * (newTotal + 1)) / (mwSupply + 1);
+        uint256 profitAssets = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
+
+        uint256 insuranceDeficitAssets;
+        {
+            uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
+            uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
+            uint256 insuranceCurrentAssets = metawalletUSDC.convertToAssets(insuranceBalanceBefore);
+            insuranceDeficitAssets =
+                insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
+        }
+
+        uint256 profitShares = (profitAssets * (mwSupply + 1)) / (newTotal + 1);
+        while ((profitShares * (newTotal + 1)) / (mwSupply + 1) < profitAssets) {
+            profitShares += 1;
+        }
+
+        uint256 insuranceDeficitShares = (insuranceDeficitAssets * (mwSupply + 1)) / (newTotal + 1);
+        while ((insuranceDeficitShares * (newTotal + 1)) / (mwSupply + 1) < insuranceDeficitAssets) {
+            insuranceDeficitShares += 1;
+        }
+        expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
+
+        uint256 remainingSharesAfterInsurance = profitShares - expectedInsuranceShares;
+        expectedTreasuryShares = (remainingSharesAfterInsurance * treasuryBps) / 10_000;
+    }
+
+    /// @notice Snapshots metawallet state and computes the resulting profit shares
+    /// @dev Isolated into its own internal helper so callers stay within EVM stack limits.
+    ///      Mirrors the dust-rounding loop used on-chain when converting profit assets to shares.
+    /// @return profitShares Number of metawallet shares matching the current depeg-derived profit
+    /// @return mwSupply Pre-settlement metawallet total supply (needed by callers for netting math)
+    /// @return newTotal Pre-settlement underlying balance held by the metawallet
+    function _computeProfitSharesAndMwState()
+        internal
+        view
+        returns (uint256 profitShares, uint256 mwSupply, uint256 newTotal)
+    {
+        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
+        uint256 valueBefore = metawalletUSDC.convertToAssets(kMinterShares);
+        newTotal = tokens.usdc.balanceOf(address(metawalletUSDC));
+        mwSupply = metawalletUSDC.totalSupply();
+        uint256 valueAfter = (kMinterShares * (newTotal + 1)) / (mwSupply + 1);
+        uint256 profitAssets = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
+
+        profitShares = (profitAssets * (mwSupply + 1)) / (newTotal + 1);
+        while ((profitShares * (newTotal + 1)) / (mwSupply + 1) < profitAssets) {
+            profitShares += 1;
+        }
+    }
+
     function test_settler_profit_distribution_to_insurance() public {
         uint16 insuranceBps = 1000;
         _setupProfitDistribution(insuranceBps, 0);
@@ -406,29 +476,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         (, address insurance,,) = registry.getSettlementConfig();
         uint256 insuranceBalanceBefore = metawalletUSDC.balanceOf(insurance);
 
-        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
-        uint256 valueBefore = metawalletUSDC.convertToAssets(kMinterShares);
-        uint256 newTotal = tokens.usdc.balanceOf(address(metawalletUSDC));
-        uint256 mwSupply = metawalletUSDC.totalSupply();
-        uint256 valueAfter = (kMinterShares * (newTotal + 1)) / (mwSupply + 1);
-        uint256 profitAssets = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
-
-        uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
-        uint256 insuranceCurrentAssets = metawalletUSDC.convertToAssets(insuranceBalanceBefore);
-        uint256 insuranceDeficitAssets =
-            insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
-
-        uint256 profitShares = (profitAssets * (mwSupply + 1)) / (newTotal + 1);
-        while ((profitShares * (newTotal + 1)) / (mwSupply + 1) < profitAssets) {
-            profitShares += 1;
-        }
-
-        uint256 insuranceDeficitShares = (insuranceDeficitAssets * (mwSupply + 1)) / (newTotal + 1);
-        while ((insuranceDeficitShares * (newTotal + 1)) / (mwSupply + 1) < insuranceDeficitAssets) {
-            insuranceDeficitShares += 1;
-        }
-        uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
+        // Compute expected distribution in a dedicated stack frame to keep this test within EVM stack limits.
+        (uint256 expectedInsuranceShares,) = _computeExpectedDistribution(insuranceBps, 0, insuranceBalanceBefore);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
@@ -472,25 +521,12 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         (address treasury,,,) = registry.getSettlementConfig();
         uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
 
-        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
-        uint256 valueBefore = metawalletUSDC.convertToAssets(kMinterShares);
-        uint256 newTotal = tokens.usdc.balanceOf(address(metawalletUSDC));
-        uint256 mwSupply = metawalletUSDC.totalSupply();
-        uint256 valueAfter = (kMinterShares * (newTotal + 1)) / (mwSupply + 1);
-        uint256 profitAssets = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
-
-        uint256 profitShares = (profitAssets * (mwSupply + 1)) / (newTotal + 1);
-        while ((profitShares * (newTotal + 1)) / (mwSupply + 1) < profitAssets) {
-            profitShares += 1;
-        }
-
-        uint256 remainingShares = profitShares;
-        uint256 expectedTreasuryShares = (remainingShares * treasuryBps) / 10_000;
+        // Compute expected distribution in a dedicated stack frame to keep this test within EVM stack limits.
+        (, uint256 expectedTreasuryShares) = _computeExpectedDistribution(0, treasuryBps, 0);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
-        uint256 treasurySharesReceived = treasuryBalanceAfter - treasuryBalanceBefore;
+        uint256 treasurySharesReceived = metawalletUSDC.balanceOf(treasury) - treasuryBalanceBefore;
 
         assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 5);
 
@@ -531,32 +567,9 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 insuranceBalanceBefore = metawalletUSDC.balanceOf(insurance);
         uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
 
-        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
-        uint256 valueBefore = metawalletUSDC.convertToAssets(kMinterShares);
-        uint256 newTotal = tokens.usdc.balanceOf(address(metawalletUSDC));
-        uint256 mwSupply = metawalletUSDC.totalSupply();
-        uint256 valueAfter = (kMinterShares * (newTotal + 1)) / (mwSupply + 1);
-        uint256 profitAssets = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
-
-        uint256 expectedKMinterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
-        uint256 insuranceTarget = (expectedKMinterAssets * insuranceBps) / 10_000;
-        uint256 insuranceCurrentAssets = metawalletUSDC.convertToAssets(insuranceBalanceBefore);
-        uint256 insuranceDeficitAssets =
-            insuranceCurrentAssets >= insuranceTarget ? 0 : insuranceTarget - insuranceCurrentAssets;
-
-        uint256 profitShares = (profitAssets * (mwSupply + 1)) / (newTotal + 1);
-        while ((profitShares * (newTotal + 1)) / (mwSupply + 1) < profitAssets) {
-            profitShares += 1;
-        }
-
-        uint256 insuranceDeficitShares = (insuranceDeficitAssets * (mwSupply + 1)) / (newTotal + 1);
-        while ((insuranceDeficitShares * (newTotal + 1)) / (mwSupply + 1) < insuranceDeficitAssets) {
-            insuranceDeficitShares += 1;
-        }
-        uint256 expectedInsuranceShares = profitShares < insuranceDeficitShares ? profitShares : insuranceDeficitShares;
-
-        uint256 remainingSharesAfterInsurance = profitShares - expectedInsuranceShares;
-        uint256 expectedTreasuryShares = (remainingSharesAfterInsurance * treasuryBps) / 10_000;
+        // Compute expected distribution in a dedicated stack frame to keep this test within EVM stack limits.
+        (uint256 expectedInsuranceShares, uint256 expectedTreasuryShares) =
+            _computeExpectedDistribution(insuranceBps, treasuryBps, insuranceBalanceBefore);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
@@ -602,25 +615,15 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         uint256 dnAdapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
 
-        uint256 kMinterShares = metawalletUSDC.balanceOf(address(minterAdapterUSDC));
-        uint256 valueBefore = metawalletUSDC.convertToAssets(kMinterShares);
-        uint256 newTotal = tokens.usdc.balanceOf(address(metawalletUSDC));
-        uint256 mwSupply = metawalletUSDC.totalSupply();
-        uint256 valueAfter = (kMinterShares * (newTotal + 1)) / (mwSupply + 1);
-        uint256 profitAssets = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
-
-        uint256 profitShares = (profitAssets * (mwSupply + 1)) / (newTotal + 1);
-        while ((profitShares * (newTotal + 1)) / (mwSupply + 1) < profitAssets) {
-            profitShares += 1;
-        }
-
-        // All profit shares should go to vault adapter (no partial distribution)
-        uint256 expectedVaultAdapterProfitShares = profitShares;
+        // All profit shares should go to vault adapter (no partial distribution).
+        // Snapshot metawallet state in a dedicated frame to keep this test within EVM stack limits.
+        (uint256 expectedVaultAdapterProfitShares, uint256 mwSupply, uint256 newTotal) =
+            _computeProfitSharesAndMwState();
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        uint256 dnAdapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        uint256 vaultAdapterSharesReceived = dnAdapterBalanceAfter - dnAdapterBalanceBefore;
+        uint256 vaultAdapterSharesReceived =
+            metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC)) - dnAdapterBalanceBefore;
 
         uint256 nettingShares = (depositAmount * (mwSupply + 1)) / (newTotal + 1);
 

@@ -173,11 +173,13 @@ contract kSettlerHandler is BaseHandler {
             return;
         }
         kToken.safeApprove(address(kMinter), amount);
-        // Check if total requested (including this new request) would exceed virtual balance
-        bytes32 currentBatchId = kMinter.getBatchId(token);
-        uint256 currentRequested = kMinter.getBatchInfo(currentBatchId).requestedSharesInBatch;
-        uint256 virtualBal = assetRouter.virtualBalance(address(kMinter), token);
-        if (virtualBal < currentRequested + amount) {
+
+        // Mirror kAssetRouter.kAssetRequestPull -> _checkSufficientVirtualBalance.
+        // Verified against dependencies/kam-v1/src/kAssetRouter.sol:186-189 and 814-819, and
+        // dependencies/kam-v1/test/invariant/handlers/kMinterHandler.t.sol:110-141.
+        // The router checks cross-batch global pending requests, adjusted by netting of all open
+        // proposals. Per-batch `requestedSharesInBatch` is insufficient.
+        if (_willRequestBurnRevert(amount)) {
             vm.expectRevert();
             kMinter.requestBurn(token, actor, amount);
             vm.stopPrank();
@@ -192,6 +194,30 @@ contract kSettlerHandler is BaseHandler {
         minterActualAdapterTotalAssets = minterAdapter.totalAssets();
         minterNettedInBatch -= int256(amount);
         minterTotalNetted -= int256(amount);
+    }
+
+    /// @notice Predicts whether `kMinter.requestBurn(token, _, amount)` would revert with A6
+    /// @dev Mirrors `kAssetRouter._checkSufficientVirtualBalance` semantics: virtual balance
+    ///      adjusted by signed netting of every pending proposal must cover the global pending
+    ///      request total after adding `amount`.
+    function _willRequestBurnRevert(uint256 amount) internal view returns (bool) {
+        uint256 virtualBal = assetRouter.virtualBalance(address(kMinter), token);
+        uint256 globalPending = assetRouter.getGlobalPendingRequests(address(kMinter), token);
+        uint256 totalRequested = globalPending + amount;
+
+        int256 virtualBalInt = int256(virtualBal);
+        if (assetRouter.getPendingProposalCount(address(kMinter)) > 0) {
+            bytes32[] memory pendingProposals = assetRouter.getPendingProposals(address(kMinter));
+            for (uint256 i = 0; i < pendingProposals.length; i++) {
+                IkAssetRouter.VaultSettlementProposal memory openProposal =
+                    assetRouter.getSettlementProposal(pendingProposals[i]);
+                if (openProposal.asset == token) {
+                    virtualBalInt += openProposal.netted;
+                }
+            }
+        }
+        if (virtualBalInt < 0) return true;
+        return uint256(virtualBalInt) < totalRequested;
     }
 
     function settler_burn(uint256 actorSeed, uint256 requestSeedIndex) public {
@@ -214,7 +240,11 @@ contract kSettlerHandler is BaseHandler {
         kMinter.burn(requestId);
         vm.stopPrank();
 
-        minterExpectedTotalLockedAssets -= amount;
+        // NOTE: kMinter.burn() does NOT mutate $.totalLockedAssets on-chain (verified against
+        // dependencies/kam-v1/src/kMinter.sol:224-262). The decrement of locked assets happens
+        // exclusively in kMinter.settleBatch() during executeSettleBatch — tracked there.
+        // Therefore the expected total stays unchanged here; just refresh the actual reading.
+        amount; // silence unused local: kept for parity with `kMinter.getBurnRequest(_).amount`
         minterActualTotalLockedAssets = kMinter.getTotalLockedAssets(token);
         minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
         minterActualAdapterTotalAssets = minterAdapter.totalAssets();
@@ -293,6 +323,13 @@ contract kSettlerHandler is BaseHandler {
                 minterExpectedAdapterBalance -= actualTransferred;
                 minterActualAdapterBalance = balanceAfter;
                 minterActualAdapterTotalAssets = minterAdapter.totalAssets();
+
+                // kMinter.settleBatch() (called by router.executeSettleBatch) decrements
+                // $.totalLockedAssets by `requestedSharesInBatch`. Mirror it.
+                // Verified against dependencies/kam-v1/src/kMinter.sol:308-309 and
+                // dependencies/kam-v1/test/invariant/handlers/kMinterHandler.t.sol:289-292.
+                minterExpectedTotalLockedAssets -= kMinter.getBatchInfo(proposal.batchId).requestedSharesInBatch;
+                minterActualTotalLockedAssets = kMinter.getTotalLockedAssets(token);
             } catch {
                 // Settlement failed - skip this proposal
             }
@@ -653,6 +690,7 @@ contract kSettlerHandler is BaseHandler {
         dnActualAdapterTotalAssets = _value;
     }
 
+
     // //////////////////////////////////////////////////////////////
     // / INVARIANTS ///
     // //////////////////////////////////////////////////////////////
@@ -713,4 +751,5 @@ contract kSettlerHandler is BaseHandler {
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
         assertEq(dnSharePriceDelta, 0, "SETTLER: INVARIANT_DN_SHARE_PRICE_DELTA");
     }
+
 }
