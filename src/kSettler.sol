@@ -28,6 +28,8 @@ import {
     KSETTLER_PROPOSAL_ALREADY_FINALISED,
     KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
+
+import "forge-std/console2.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
@@ -58,6 +60,26 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
     /// @notice Tracks whether a proposal has already been finalised via finaliseCustodialSettlement
     mapping(bytes32 => bool) public finalisedProposals;
+
+    /*//////////////////////////////////////////////////////////////
+                                STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+    struct PendingSettlement {
+        bool isActive;
+        bool isMinter;
+        address asset;
+        address metawallet;
+        address minterAdapter;
+        address vaultAdapter;
+        int256 minterNettedAmount;
+        int256 netSharesToVaultAdapter;
+        uint256 sharesToInsurance;
+        uint256 sharesToTreasury;
+        uint256 profitSharesToVaultAdapter;
+    }
+
+    mapping(bytes32 => PendingSettlement) public pendingSettlements;
 
     /*//////////////////////////////////////////////////////////////
                               ROLES
@@ -165,21 +187,22 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
 
-        if (_nettedAmount < 0) {
-            uint256 _abs = _nettedAmount.abs();
-
-            // Money should always be idle if not revert and divest 1st.
-            Execution[] memory _executions =
-                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _abs);
-
-            _executeAdapterCall(_adapter, _executions);
-        } else if (_nettedAmount > 0) {
-            Execution[] memory _execution =
-                ExecutionDataLibrary.getDepositExecutionData(_target, address(_adapter), uint256(_nettedAmount));
-
-            _executeAdapterCall(_adapter, _execution);
-        }
         _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets);
+
+        pendingSettlements[_proposalId] = PendingSettlement({
+            isActive: true,
+            isMinter: true,
+            asset: _asset,
+            metawallet: _target,
+            minterAdapter: address(_adapter),
+            vaultAdapter: address(0),
+            minterNettedAmount: _nettedAmount,
+            netSharesToVaultAdapter: 0,
+            sharesToInsurance: 0,
+            sharesToTreasury: 0,
+            profitSharesToVaultAdapter: 0
+        });
+
         _unlockReentrant();
     }
 
@@ -251,15 +274,36 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Apply profit/loss distribution and rebalancing based on depeg direction.
         // Extracted into a dedicated frame to keep this function within EVM stack limits.
-        _handleDepeg(_depeg, _asset, _vault.totalSupply() != 0, _metawallet, _kMinterAdapter, _vaultAdapter);
+        (int256 _depegSharesVault, uint256 _sharesToInsurance, uint256 _sharesToTreasury) =
+            _handleDepeg(_depeg, _asset, _vault.totalSupply() != 0, _metawallet, _kMinterAdapter, _vaultAdapter);
 
         // Calculate final asset data for settlement
-        AssetData memory _assetData =
-            _calculateAssetData(_metawallet, _kMinterAdapter, _vaultAdapter, _vault, _batchInfo);
+        (uint256 _newTotalAssets, int256 _nettedSharesVault) =
+            _calculateAssetDataSimulated(_metawallet, _vault, _batchInfo, _depegSharesVault);
 
         // Propose the batch settlement to the asset router
-        _proposalId =
-            kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchInfo._batchId, _assetData._newTotalAssets);
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchInfo._batchId, _newTotalAssets);
+
+        // Calculate pure profit shares to the vault adapter for the event (only when _depegSharesVault > 0 and there is
+        // supply)
+        uint256 _profitSharesToVaultAdapter = 0;
+        if (_depegSharesVault > 0 && _vault.totalSupply() != 0) {
+            _profitSharesToVaultAdapter = uint256(_depegSharesVault);
+        }
+
+        pendingSettlements[_proposalId] = PendingSettlement({
+            isActive: true,
+            isMinter: false,
+            asset: _asset,
+            metawallet: address(_metawallet),
+            minterAdapter: address(_kMinterAdapter),
+            vaultAdapter: address(_vaultAdapter),
+            minterNettedAmount: 0,
+            netSharesToVaultAdapter: _depegSharesVault + _nettedSharesVault,
+            sharesToInsurance: _sharesToInsurance,
+            sharesToTreasury: _sharesToTreasury,
+            profitSharesToVaultAdapter: _profitSharesToVaultAdapter
+        });
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -271,8 +315,79 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         _lockReentrant();
         _checkRoles(SETTLER_RELAYER_ROLE);
 
+        PendingSettlement memory _pending = pendingSettlements[_proposalId];
+        if (_pending.isActive) {
+            _executePendingSettlement(_pending);
+            delete pendingSettlements[_proposalId];
+        }
+
         kAssetRouter.executeSettleBatch(_proposalId);
         _unlockReentrant();
+    }
+
+    /// @notice Clears a cancelled pending settlement payload
+    function clearCancelledSettlement(bytes32 _proposalId) external {
+        _lockReentrant();
+        _checkRoles(SETTLER_RELAYER_ROLE);
+        require(!kAssetRouter.isProposalPending(_proposalId), KSETTLER_PROPOSAL_NOT_EXECUTED);
+        delete pendingSettlements[_proposalId];
+    }
+
+    /// @notice Executes the deferred physical share transfers for a settlement proposal
+    function _executePendingSettlement(PendingSettlement memory _pending) internal {
+        if (_pending.isMinter) {
+            if (_pending.minterNettedAmount < 0) {
+                uint256 _abs = uint256(-_pending.minterNettedAmount);
+                Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
+                    _pending.metawallet, _pending.minterAdapter, _pending.minterAdapter, _abs
+                );
+                _executeAdapterCall(IMinimalSmartAccount(_pending.minterAdapter), _executions);
+            } else if (_pending.minterNettedAmount > 0) {
+                Execution[] memory _executions = ExecutionDataLibrary.getDepositExecutionData(
+                    _pending.metawallet, _pending.minterAdapter, uint256(_pending.minterNettedAmount)
+                );
+                _executeAdapterCall(IMinimalSmartAccount(_pending.minterAdapter), _executions);
+            }
+        } else {
+            IERC4626 _metawallet = IERC4626(_pending.metawallet);
+            IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(_pending.minterAdapter);
+            IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(_pending.vaultAdapter);
+
+            if (_pending.sharesToInsurance > 0) {
+                (, address _insurance,,) = registry.getSettlementConfig();
+                Execution[] memory _exe = ExecutionDataLibrary.getTransferExecutionData(
+                    address(_metawallet), _insurance, _pending.sharesToInsurance
+                );
+                _executeAdapterCall(_kMinterAdapter, _exe);
+            }
+            if (_pending.sharesToTreasury > 0) {
+                (address _treasury,,,) = registry.getSettlementConfig();
+                Execution[] memory _exe = ExecutionDataLibrary.getTransferExecutionData(
+                    address(_metawallet), _treasury, _pending.sharesToTreasury
+                );
+                _executeAdapterCall(_kMinterAdapter, _exe);
+            }
+            if (_pending.netSharesToVaultAdapter != 0) {
+                _executeNettedTransfer(
+                    _pending.netSharesToVaultAdapter > 0,
+                    address(_metawallet),
+                    address(_kMinterAdapter),
+                    address(_vaultAdapter),
+                    _pending.netSharesToVaultAdapter > 0
+                        ? uint256(_pending.netSharesToVaultAdapter)
+                        : uint256(-_pending.netSharesToVaultAdapter)
+                );
+            }
+
+            if (
+                _pending.sharesToInsurance > 0 || _pending.sharesToTreasury > 0
+                    || _pending.profitSharesToVaultAdapter > 0
+            ) {
+                emit ProfitDistributed(
+                    _pending.sharesToInsurance, _pending.sharesToTreasury, _pending.profitSharesToVaultAdapter
+                );
+            }
+        }
     }
 
     /// @inheritdoc IkSettler
@@ -426,81 +541,38 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @notice Calculates asset data for settlement
     /// @dev Determines current adapter assets, calculates netted assets, and computes new total
     /// @param _metawallet the address of the target metawallet
-    /// @param _kMinterAdapter the kMinter adapter address
-    /// @param _vaultAdapter the vault adapter address
     /// @param _vault the vault address
     /// @param _batchInfo Struct containing batch information
-    /// @return _assetData Struct containing calculated asset data
-    function _calculateAssetData(
+    /// @param _depegSharesVault The depeg shares
+    /// @return _newTotalAssets Struct containing calculated asset data
+    /// @return _nettedSharesVault The netted shares
+    function _calculateAssetDataSimulated(
         IERC4626 _metawallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _vaultAdapter,
         IkStakingVault _vault,
-        BatchInfo memory _batchInfo
+        BatchInfo memory _batchInfo,
+        int256 _depegSharesVault
     )
         internal
-        returns (AssetData memory _assetData)
+        view
+        returns (uint256 _newTotalAssets, int256 _nettedSharesVault)
     {
-        // Get current shares and assets in the DN adapter
-        _assetData._dnAdapterShares = _metawallet.balanceOf(address(_vaultAdapter));
-        _assetData._dnAdapterAssets = _metawallet.convertToAssets(_assetData._dnAdapterShares);
-        // Calculate netted assets (difference between deposited and requested)
-        _assetData._nettedAssets = _nettedAssets(
-            _assetData._dnAdapterAssets,
-            _batchInfo._deposited,
-            _batchInfo._pendingShares,
-            _metawallet,
-            _kMinterAdapter,
-            _vaultAdapter,
-            _vault
-        );
+        uint256 _dnAdapterShares = _metawallet.balanceOf(registry.getAdapter(address(_vault), _metawallet.asset()));
+        uint256 _dnAdapterAssets = _metawallet.convertToAssets(_dnAdapterShares);
 
-        _assetData._newTotalAssets = _assetData._dnAdapterAssets;
-    }
-
-    /// @dev Handles the netting process by transferring assets between adapters based on the difference
-    /// @param _dnAdapterAssets Current assets in the DN adapter
-    /// @param _deposited Total amount deposited in the batch
-    /// @param _pendingShares Number of shares pending redemption
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @return The net amount of assets after netting (can be negative)
-    function _nettedAssets(
-        uint256 _dnAdapterAssets,
-        uint256 _deposited,
-        uint256 _pendingShares,
-        IERC4626 _dnMetaWallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _dnVaultAdapter,
-        IkStakingVault _vault
-    )
-        internal
-        returns (int256)
-    {
-        // Convert pending shares to assets using current adapter totals
+        // Calculate netted shares (difference between deposited and requested)
         uint256 _requestedAssets =
-            _vault.convertToAssetsWithTotals(_pendingShares, _dnAdapterAssets, _vault.totalSupply());
+            _vault.convertToAssetsWithTotals(_batchInfo._pendingShares, _dnAdapterAssets, _vault.totalSupply());
 
-        // Calculate net difference between deposited and requested
-        int256 _nettedAssets_ = int256(_deposited) - int256(_requestedAssets);
+        int256 _nettedAssets_ = int256(_batchInfo._deposited) - int256(_requestedAssets);
 
-        // If no netting needed, return early
-        if (_nettedAssets_ == 0) return 0;
+        if (_nettedAssets_ != 0) {
+            uint256 _absShares = _metawallet.convertToShares(_nettedAssets_.abs());
+            _nettedSharesVault = _nettedAssets_ > 0 ? int256(_absShares) : -int256(_absShares);
+        }
 
-        // Convert netted assets to shares for transfer
-        uint256 _nettedShares = _dnMetaWallet.convertToShares(_nettedAssets_.abs());
-
-        // Execute the netted transfer between adapters
-        _executeNettedTransfer(
-            _nettedAssets_ > 0,
-            address(_dnMetaWallet),
-            address(_kMinterAdapter),
-            address(_dnVaultAdapter),
-            _nettedShares
-        );
-
-        return _nettedAssets_;
+        int256 _projectedSharesWithoutNetting = int256(_dnAdapterShares) + _depegSharesVault;
+        require(_projectedSharesWithoutNetting >= 0, "KSETTLER_NEGATIVE_SHARES");
+        _newTotalAssets = _metawallet.convertToAssets(uint256(_projectedSharesWithoutNetting));
     }
 
     /// @notice Executes the netted transfer between adapters
@@ -659,35 +731,28 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         IMinimalSmartAccount _vaultAdapter
     )
         internal
+        view
+        returns (int256 _depegSharesVault, uint256 _sharesToInsurance, uint256 _sharesToTreasury)
     {
         if (_depeg > 0) {
-            uint256 _sharesToVaultAdapter =
+            uint256 _sharesToVaultAdapter;
+            (_sharesToVaultAdapter, _sharesToInsurance, _sharesToTreasury) =
                 _distributeProfitShares(_metawallet, _kMinterAdapter, uint256(_depeg), true, _asset);
 
-            if (_sharesToVaultAdapter == 0) return;
-
-            if (_hasSupply) {
-                require(
-                    _metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter)) >= _sharesToVaultAdapter,
-                    KSETTLER_MISSING_ALLOWANCE
-                );
-                _executeRebalanceTransfer(false, _metawallet, _kMinterAdapter, _vaultAdapter, _sharesToVaultAdapter);
-            } else {
-                // No stakers: route residual to treasury to avoid stranding value on the kMinter adapter.
-                // This prevents yield from being permanently lost when the vault has zero supply.
-                (address _treasury,,,) = registry.getSettlementConfig();
-                if (_treasury != address(0)) {
-                    _executeShareTransfer(_metawallet, _kMinterAdapter, _treasury, _sharesToVaultAdapter);
+            if (_sharesToVaultAdapter > 0) {
+                if (_hasSupply) {
+                    _depegSharesVault = int256(_sharesToVaultAdapter);
+                } else {
+                    _sharesToTreasury += _sharesToVaultAdapter;
                 }
             }
         } else if (_depeg < 0 && _hasSupply) {
-            // Only transfer from vault adapter when there are stakers to bear the loss.
             uint256 _lossAssets = uint256(-_depeg);
             uint256 _shareValue = _metawallet.convertToShares(_lossAssets);
             while (_metawallet.convertToAssets(_shareValue) < _lossAssets) {
                 _shareValue += 1;
             }
-            _executeRebalanceTransfer(true, _metawallet, _kMinterAdapter, _vaultAdapter, _shareValue);
+            _depegSharesVault = -int256(_shareValue);
         }
     }
 
@@ -740,60 +805,45 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         address _asset
     )
         internal
-        returns (uint256 _sharesToVaultAdapter)
+        view
+        returns (uint256 _sharesToVaultAdapter, uint256 _sharesToInsurance, uint256 _sharesToTreasury)
     {
-        if (_profitAssets == 0) return 0;
+        if (_profitAssets == 0) return (0, 0, 0);
 
-        // Convert profit to shares
         uint256 _profitShares = _metawallet.convertToShares(_profitAssets);
-        // Adjust for dust
         while (_metawallet.convertToAssets(_profitShares) < _profitAssets) {
             _profitShares += 1;
         }
 
         uint256 _remainingShares = _profitShares;
-
-        // Get settlement config — read once and pass insurance fields to _getInsuranceDeficit
-        // so it does not re-read the same values from the registry.
         (address _treasury, address _insurance, uint16 _treasuryBps, uint16 _insuranceBps) =
             registry.getSettlementConfig();
 
-        // 1. Insurance priority distribution
         uint256 _insuranceDeficitAssets =
             _getInsuranceDeficit(_metawallet, _kMinterAdapter, _asset, _insurance, _insuranceBps);
-        uint256 _insuranceShares = 0;
 
         if (_insuranceDeficitAssets > 0 && _insurance != address(0)) {
             uint256 _insuranceDeficitShares = _metawallet.convertToShares(_insuranceDeficitAssets);
-            // Adjust for dust (consistent with all other asset-to-share conversions)
             while (_metawallet.convertToAssets(_insuranceDeficitShares) < _insuranceDeficitAssets) {
                 _insuranceDeficitShares += 1;
             }
-            _insuranceShares = _remainingShares < _insuranceDeficitShares ? _remainingShares : _insuranceDeficitShares;
+            _sharesToInsurance = _remainingShares < _insuranceDeficitShares ? _remainingShares : _insuranceDeficitShares;
 
-            if (_insuranceShares > 0) {
-                _executeShareTransfer(_metawallet, _kMinterAdapter, _insurance, _insuranceShares);
-                _remainingShares -= _insuranceShares;
+            if (_sharesToInsurance > 0) {
+                _remainingShares -= _sharesToInsurance;
             }
         }
 
-        // 2. Treasury distribution (from remaining profit)
-        uint256 _treasuryShares = 0;
         if (_remainingShares > 0 && _treasuryBps > 0 && _treasury != address(0)) {
-            _treasuryShares = (_remainingShares * _treasuryBps) / 10_000;
-            if (_treasuryShares > 0) {
-                _executeShareTransfer(_metawallet, _kMinterAdapter, _treasury, _treasuryShares);
-                _remainingShares -= _treasuryShares;
+            _sharesToTreasury = (_remainingShares * _treasuryBps) / 10_000;
+            if (_sharesToTreasury > 0) {
+                _remainingShares -= _sharesToTreasury;
             }
         }
 
-        // 3. Remaining profit goes to vault adapter to maintain kMinter peg
-        // kMinter should never hold excess profit - it must stay pegged to kToken supply
         if (_isVaultSettlement && _remainingShares > 0) {
             _sharesToVaultAdapter = _remainingShares;
         }
-
-        emit ProfitDistributed(_insuranceShares, _treasuryShares, _sharesToVaultAdapter);
     }
 
     /// @notice Transfers shares from kMinter adapter to a recipient

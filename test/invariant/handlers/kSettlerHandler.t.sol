@@ -690,7 +690,6 @@ contract kSettlerHandler is BaseHandler {
         dnActualAdapterTotalAssets = _value;
     }
 
-
     // //////////////////////////////////////////////////////////////
     // / INVARIANTS ///
     // //////////////////////////////////////////////////////////////
@@ -751,5 +750,4 @@ contract kSettlerHandler is BaseHandler {
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
         assertEq(dnSharePriceDelta, 0, "SETTLER: INVARIANT_DN_SHARE_PRICE_DELTA");
     }
-
 }
