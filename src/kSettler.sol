@@ -3,17 +3,22 @@ pragma solidity 0.8.30;
 
 // External Libraries
 import { OptimizedOwnableRoles } from "kam/src/vendor/solady/auth/OptimizedOwnableRoles.sol";
+import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 import { OptimizedReentrancyGuardTransient } from "kam/src/vendor/solady/utils/OptimizedReentrancyGuardTransient.sol";
+import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
+import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Internal Libraries
 import { ExecutionDataLibrary } from "./libraries/ExecutionDataLibrary.sol";
-import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
-import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
-import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Local Interfaces
 import { IRegistry } from "./interfaces/IRegistry.sol";
 import { IVaultAdapter, IkAssetRouter, IkMinter, IkSettler, IkStakingVault, IkToken } from "./interfaces/IkSettler.sol";
+import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
+import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
+import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
+import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 // Errors
 import {
@@ -21,21 +26,15 @@ import {
     KSETTLER_ASSET_MISMATCH,
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
+    KSETTLER_DEPEG_LOSS_EXCEEDS_DN_POSITION,
     KSETTLER_INSUFFICIENT_BALANCE,
     KSETTLER_INVALID_TARGET_TYPE,
     KSETTLER_INVALID_VAULT_TYPE,
-    KSETTLER_DEPEG_LOSS_EXCEEDS_DN_POSITION,
     KSETTLER_MISSING_ALLOWANCE,
     KSETTLER_PROPOSAL_ALREADY_FINALISED,
     KSETTLER_PROPOSAL_NOT_EXECUTED,
     KSETTLER_PROPOSAL_STILL_PENDING
 } from "./errors/Errors.sol";
-
-import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
-import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
-import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
-import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
-import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /// @title kSettler
 /// @notice Settlement entrypoint for kMinter, DN, and custodial vault batches.
@@ -245,9 +244,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             int256(_metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)))) - int256(_valueBefore);
 
         BatchInfo memory _batchInfo = _getBatchInfo(_vault);
-        require(!_batchInfo._isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
-        require(!_batchInfo._isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
-        _vault.closeBatch(_batchInfo._batchId, true);
+        require(!_batchInfo.isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
+        require(!_batchInfo.isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
+        _vault.closeBatch(_batchInfo.batchId, true);
 
         bool _hasSupply = _vault.totalSupply() != 0;
 
@@ -264,7 +263,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         // Snapshot the post-fee netting from the proposal so the deferred MetaWallet movement uses
         // the same value the router will apply to adapter accounting at execute time.
-        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchInfo._batchId, _newTotalAssets);
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchInfo.batchId, _newTotalAssets);
 
         int256 _nettedSharesVault;
         {
@@ -328,7 +327,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         int256 _netted = _p.nettedAmount;
         if (_netted == 0) return;
         Execution[] memory _executions = _netted < 0
-            ? ExecutionDataLibrary.getWithdrawExecutionData(_p.metawallet, _p.minterAdapter, _p.minterAdapter, uint256(-_netted))
+            ? ExecutionDataLibrary.getWithdrawExecutionData(
+                _p.metawallet, _p.minterAdapter, _p.minterAdapter, uint256(-_netted)
+            )
             : ExecutionDataLibrary.getDepositExecutionData(_p.metawallet, _p.minterAdapter, uint256(_netted));
         _executeAdapterCall(IMinimalSmartAccount(_p.minterAdapter), _executions);
     }
@@ -357,11 +358,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         int256 _net = _p.netSharesToVaultAdapter;
         if (_net != 0) {
             _executeNettedTransfer(
-                _net > 0,
-                _p.metawallet,
-                _p.kMinterAdapter,
-                _p.vaultAdapter,
-                _net > 0 ? uint256(_net) : uint256(-_net)
+                _net > 0, _p.metawallet, _p.kMinterAdapter, _p.vaultAdapter, _net > 0 ? uint256(_net) : uint256(-_net)
             );
         }
 
@@ -484,9 +481,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkSettler
-    function isNettedNegative(bytes32 _proposalId) external view returns (bool _isNettedNegative) {
-        IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
-        if (_proposal.netted < 0) return true;
+    function isNettedNegative(bytes32 _proposalId) external view returns (bool) {
+        return kAssetRouter.getSettlementProposal(_proposalId).netted < 0;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -504,7 +500,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @dev Deposits and requested shares are no longer read here: the router computes the netting
     ///      itself in `_computeNetting` and the kSettler reads `proposal.netted` back after propose.
     function _getBatchInfo(IkStakingVault _vault) internal view returns (BatchInfo memory _batchInfo) {
-        (_batchInfo._batchId,, _batchInfo._isClosed, _batchInfo._isSettled) = _vault.getCurrentBatchInfo();
+        (_batchInfo.batchId,, _batchInfo.isClosed, _batchInfo.isSettled) = _vault.getCurrentBatchInfo();
     }
 
     /// @notice Moves netted MetaWallet shares between the kMinter and DN vault adapters
@@ -521,7 +517,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         internal
     {
         Execution[] memory _executions = _toVaultAdapter
-            ? ExecutionDataLibrary.getTransferFromExecutionData(_metawallet, _kMinterAdapter, _vaultAdapter, _nettedShares)
+            ? ExecutionDataLibrary.getTransferFromExecutionData(
+                _metawallet, _kMinterAdapter, _vaultAdapter, _nettedShares
+            )
             : ExecutionDataLibrary.getTransferExecutionData(_metawallet, _kMinterAdapter, _nettedShares);
         _executeAdapterCall(IMinimalSmartAccount(_vaultAdapter), _executions);
     }
@@ -706,5 +704,4 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _sharesToVaultAdapter = _remainingShares;
         }
     }
-
 }

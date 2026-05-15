@@ -349,8 +349,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vault.requestUnstake(users.alice, users.alice, unstakeShares);
 
         uint256 yieldAmount = 50_000e6;
-        (bool ok,) = tokens.usdc
-            .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), yieldAmount));
+        (bool ok,) =
+            tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), yieldAmount));
         require(ok);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();

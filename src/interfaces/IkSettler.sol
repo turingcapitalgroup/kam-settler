@@ -29,13 +29,13 @@ interface IkSettler {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Closed/settled status snapshot for a vault batch
-    /// @param _batchId The batch identifier
-    /// @param _isClosed Whether the batch has been closed
-    /// @param _isSettled Whether the batch has been settled
+    /// @param batchId The batch identifier
+    /// @param isClosed Whether the batch has been closed
+    /// @param isSettled Whether the batch has been settled
     struct BatchInfo {
-        bytes32 _batchId;
-        bool _isClosed;
-        bool _isSettled;
+        bytes32 batchId;
+        bool isClosed;
+        bool isSettled;
     }
 
     /*//////////////////////////////////////////////////////////////
