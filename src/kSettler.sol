@@ -275,9 +275,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Apply profit/loss distribution and rebalancing based on depeg direction.
         // Extracted into a dedicated frame to keep this function within EVM stack limits.
         (int256 _depegSharesVault, uint256 _sharesToInsurance, uint256 _sharesToTreasury) =
-            _handleDepeg(_depeg, _asset, _vault.totalSupply() != 0, _metawallet, _kMinterAdapter, _vaultAdapter);
+            _handleDepeg(_depeg, _asset, _vault.totalSupply() != 0, _metawallet, _kMinterAdapter);
 
-        // Calculate final asset data for settlement
+        // Calculate final asset data for settlement. Netting is computed but not transferred yet;
+        // the physical MetaWallet share transfer runs in executeSettleBatch before router execution.
         (uint256 _newTotalAssets, int256 _nettedSharesVault) =
             _calculateAssetDataSimulated(_metawallet, _vault, _batchInfo, _depegSharesVault);
 
@@ -322,6 +323,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         }
 
         kAssetRouter.executeSettleBatch(_proposalId);
+
         _unlockReentrant();
     }
 
@@ -539,7 +541,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     }
 
     /// @notice Calculates asset data for settlement
-    /// @dev Determines current adapter assets, calculates netted assets, and computes new total
+    /// @dev Determines current adapter shares/assets, calculates deferred netted shares, and computes the simulated
+    ///      totalAssets passed to the router. Physical MetaWallet share transfers run in executeSettleBatch before
+    ///      router accounting is updated.
     /// @param _metawallet the address of the target metawallet
     /// @param _vault the vault address
     /// @param _batchInfo Struct containing batch information
@@ -559,7 +563,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         uint256 _dnAdapterShares = _metawallet.balanceOf(registry.getAdapter(address(_vault), _metawallet.asset()));
         uint256 _dnAdapterAssets = _metawallet.convertToAssets(_dnAdapterShares);
 
-        // Calculate netted shares (difference between deposited and requested)
         uint256 _requestedAssets =
             _vault.convertToAssetsWithTotals(_batchInfo._pendingShares, _dnAdapterAssets, _vault.totalSupply());
 
@@ -721,14 +724,12 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @param _hasSupply Whether the DN vault has any staker supply
     /// @param _metawallet The MetaWallet (ERC4626) shared between kMinter and DN adapters
     /// @param _kMinterAdapter The kMinter adapter holding shares to redistribute
-    /// @param _vaultAdapter The DN vault adapter receiving rebalanced shares
     function _handleDepeg(
         int256 _depeg,
         address _asset,
         bool _hasSupply,
         IERC4626 _metawallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _vaultAdapter
+        IMinimalSmartAccount _kMinterAdapter
     )
         internal
         view

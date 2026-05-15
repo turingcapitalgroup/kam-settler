@@ -28,6 +28,8 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     kSettler public settler;
     ERC20ExecutionValidator public paramChecker;
 
+    uint256 internal constant _ACCOUNTING_DUST = 5;
+
     function setUp() public override(BaseVaultTest, DeploymentBaseTest) {
         // Point to kam-v1's deployments folder which has the complete config
         vm.setEnv("DEPLOYMENT_BASE_PATH", "dependencies/kam-v1/deployments");
@@ -210,7 +212,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
         _executeSettlement(proposalId);
-
         uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
@@ -245,7 +246,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
         _acceptAndExecute(proposalId);
-
         uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
@@ -284,7 +284,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
 
         _acceptAndExecute(proposalId);
-
         uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
@@ -660,7 +659,7 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertGt(vaultAdapterSharesReceived, nettingShares);
 
         uint256 profitShareReceived = vaultAdapterSharesReceived - nettingShares;
-        assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, 5);
+        assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, _ACCOUNTING_DUST);
     }
 
     function test_settler_liquidate_insurance() public {
@@ -859,6 +858,31 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
     function _executeSettlement(bytes32 _proposalId) internal {
         vm.prank(users.relayer);
         settler.executeSettleBatch(_proposalId);
+        _assertPostSettlementAccounting(_proposalId);
+    }
+
+    function _assertPostSettlementAccounting(bytes32 _proposalId) internal view {
+        IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(_proposalId);
+
+        if (proposal.vault == address(minter)) {
+            uint256 minterAdapterAssets = IVaultAdapter(address(minterAdapterUSDC)).totalAssets();
+            uint256 minterMetaWalletAssets =
+                metawalletUSDC.convertToAssets(metawalletUSDC.balanceOf(address(minterAdapterUSDC)));
+
+            assertEq(minterAdapterAssets, proposal.totalAssets, "MINTER_ADAPTER_PROPOSAL_TOTAL_ASSETS");
+            assertApproxEqAbs(
+                minterMetaWalletAssets, minterAdapterAssets, _ACCOUNTING_DUST, "MINTER_ADAPTER_METAWALLET_POSITION"
+            );
+        } else if (proposal.vault == address(vault)) {
+            uint256 dnVaultAssets = vault.totalAssets();
+            uint256 dnAdapterAssets = IVaultAdapter(address(DNVaultAdapterUSDC)).totalAssets();
+            uint256 dnMetaWalletAssets =
+                metawalletUSDC.convertToAssets(metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC)));
+
+            assertEq(dnAdapterAssets, proposal.totalAssets, "DN_ADAPTER_PROPOSAL_TOTAL_ASSETS");
+            assertEq(dnAdapterAssets, dnVaultAssets, "DN_ADAPTER_VAULT_TOTAL_ASSETS");
+            assertApproxEqAbs(dnMetaWalletAssets, dnAdapterAssets, _ACCOUNTING_DUST, "DN_ADAPTER_METAWALLET_POSITION");
+        }
     }
 
     uint256 internal constant _TEST_ADMIN_ROLE = 1;

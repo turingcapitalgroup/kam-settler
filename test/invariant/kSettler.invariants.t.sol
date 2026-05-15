@@ -25,12 +25,20 @@ contract kSettlerInvariants is kSettlerSetUp {
         settlerHandler.INVARIANT_MINTER_ADAPTER_TOTAL_ASSETS();
     }
 
+    function invariant_SETTLER_MinterAdapterMatchesMetaWalletPosition() public view {
+        settlerHandler.INVARIANT_MINTER_ADAPTER_MATCHES_METAWALLET_POSITION();
+    }
+
     function invariant_SETTLER_DNTotalAssets() public view {
         settlerHandler.INVARIANT_DN_TOTAL_ASSETS();
     }
 
     function invariant_SETTLER_DNAdapterTotalAssets() public view {
         settlerHandler.INVARIANT_DN_ADAPTER_TOTAL_ASSETS();
+    }
+
+    function invariant_SETTLER_DNAdapterMatchesVaultAndMetaWalletPosition() public view {
+        settlerHandler.INVARIANT_DN_ADAPTER_MATCHES_VAULT_AND_METAWALLET_POSITION();
     }
 
     function invariant_SETTLER_DNSharePrice() public view {
