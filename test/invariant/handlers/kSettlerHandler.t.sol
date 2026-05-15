@@ -22,6 +22,8 @@ contract kSettlerHandler is BaseHandler {
     using LibBytes32Set for Bytes32Set;
     using LibAddressSet for AddressSet;
 
+    uint256 internal constant ACCOUNTING_DUST = 5;
+
     // Core contracts
     kSettler settler;
     IkMinter kMinter;
@@ -521,7 +523,6 @@ contract kSettlerHandler is BaseHandler {
 
             // Update adapter balance tracking
             dnActualAdapterBalance = metawallet.balanceOf(address(dnVaultAdapter));
-            uint256 minterAdapterMetawalletBalance = metawallet.balanceOf(address(minterAdapter));
             minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
         } catch {
             // Batch close failed - skip
@@ -690,7 +691,6 @@ contract kSettlerHandler is BaseHandler {
         dnActualAdapterTotalAssets = _value;
     }
 
-
     // //////////////////////////////////////////////////////////////
     // / INVARIANTS ///
     // //////////////////////////////////////////////////////////////
@@ -715,6 +715,17 @@ contract kSettlerHandler is BaseHandler {
         );
     }
 
+    function INVARIANT_MINTER_ADAPTER_MATCHES_METAWALLET_POSITION() public view {
+        // Pending settlement proposals can intentionally move shares before router accounting is updated.
+        if (pendingMinterSettlementProposals.count() != 0 || pendingDNSettlementProposals.count() != 0) return;
+
+        uint256 adapterAssets = minterAdapter.totalAssets();
+        uint256 metawalletAssets = metawallet.convertToAssets(metawallet.balanceOf(address(minterAdapter)));
+        assertApproxEqAbs(
+            metawalletAssets, adapterAssets, ACCOUNTING_DUST, "SETTLER: INVARIANT_MINTER_ADAPTER_METAWALLET_POSITION"
+        );
+    }
+
     function INVARIANT_DN_TOTAL_ASSETS() public view {
         // Skip this invariant if no DN settlement has happened yet
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
@@ -725,6 +736,20 @@ contract kSettlerHandler is BaseHandler {
         // Skip this invariant if no DN settlement has happened yet
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
         assertEq(dnExpectedAdapterTotalAssets, dnActualAdapterTotalAssets, "SETTLER: INVARIANT_DN_ADAPTER_TOTAL_ASSETS");
+    }
+
+    function INVARIANT_DN_ADAPTER_MATCHES_VAULT_AND_METAWALLET_POSITION() public view {
+        // Pending settlement proposals can intentionally move shares before router accounting is updated.
+        if (pendingMinterSettlementProposals.count() != 0 || pendingDNSettlementProposals.count() != 0) return;
+        // Skip this invariant if no DN settlement has happened yet
+        if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
+
+        uint256 adapterAssets = dnVaultAdapter.totalAssets();
+        uint256 metawalletAssets = metawallet.convertToAssets(metawallet.balanceOf(address(dnVaultAdapter)));
+        assertEq(adapterAssets, dnVault.totalAssets(), "SETTLER: INVARIANT_DN_ADAPTER_VAULT_TOTAL_ASSETS");
+        assertApproxEqAbs(
+            metawalletAssets, adapterAssets, ACCOUNTING_DUST, "SETTLER: INVARIANT_DN_ADAPTER_METAWALLET_POSITION"
+        );
     }
 
     function INVARIANT_DN_SHARE_PRICE() public view {
@@ -751,5 +776,4 @@ contract kSettlerHandler is BaseHandler {
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
         assertEq(dnSharePriceDelta, 0, "SETTLER: INVARIANT_DN_SHARE_PRICE_DELTA");
     }
-
 }

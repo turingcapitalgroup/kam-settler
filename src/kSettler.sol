@@ -253,9 +253,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         // Extracted into a dedicated frame to keep this function within EVM stack limits.
         _handleDepeg(_depeg, _asset, _vault.totalSupply() != 0, _metawallet, _kMinterAdapter, _vaultAdapter);
 
-        // Calculate final asset data for settlement
-        AssetData memory _assetData =
-            _calculateAssetData(_metawallet, _kMinterAdapter, _vaultAdapter, _vault, _batchInfo);
+        // Calculate final asset data for settlement. Netting is computed but not transferred yet;
+        // the physical MetaWallet share transfer runs in executeSettleBatch before router execution.
+        AssetData memory _assetData = _calculateAssetData(_metawallet, _vaultAdapter, _vault, _batchInfo);
 
         // Propose the batch settlement to the asset router
         _proposalId =
@@ -271,7 +271,18 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         _lockReentrant();
         _checkRoles(SETTLER_RELAYER_ROLE);
 
+        // Cache proposal data before execution (cleared after execute)
+        IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
+
+        // For DN vaults, execute the physical MetaWallet share transfer before the
+        // router settles the batch and updates protocol accounting.
+        uint8 _vaultType = registry.getVaultType(_proposal.vault);
+        if (_vaultType == uint8(IRegistryBase.VaultType.DN)) {
+            _executeProposalNetting(_proposal);
+        }
+
         kAssetRouter.executeSettleBatch(_proposalId);
+
         _unlockReentrant();
     }
 
@@ -398,6 +409,27 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                               INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Executes the netting MetaWallet share transfer for a DN settlement proposal
+    /// @dev Uses the proposal's signed netted value, then the router settlement updates
+    ///      protocol accounting and settles the vault batch.
+    /// @param _proposal The settlement proposal containing vault, asset, and netting info
+    function _executeProposalNetting(IkAssetRouter.VaultSettlementProposal memory _proposal) internal {
+        if (_proposal.netted == 0) return;
+
+        address _asset = _proposal.asset;
+        IkStakingVault _vault = IkStakingVault(_proposal.vault);
+
+        IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
+        IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
+        address _target = _getTarget(address(_vaultAdapter), IExecutionGuardian.TargetType.METAWALLET);
+        IERC4626 _metawallet = IERC4626(_target);
+
+        uint256 _nettedShares = _metawallet.convertToShares(_proposal.netted.abs());
+        _executeNettedTransfer(
+            _proposal.netted > 0, address(_metawallet), address(_kMinterAdapter), address(_vaultAdapter), _nettedShares
+        );
+    }
+
     /// @notice Executes a batch of operations through the adapter using MinimalSmartAccount interface
     /// @dev Encodes the execution array and calls the adapter's execute function
     /// @param _adapter The adapter to execute through
@@ -424,58 +456,50 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     }
 
     /// @notice Calculates asset data for settlement
-    /// @dev Determines current adapter assets, calculates netted assets, and computes new total
+    /// @dev Determines current adapter assets, calculates netted assets, and computes new total.
+    ///      The actual MetaWallet share transfer for netting is deferred to executeSettleBatch
+    ///      so the physical share movement happens immediately before router accounting is updated.
     /// @param _metawallet the address of the target metawallet
-    /// @param _kMinterAdapter the kMinter adapter address
     /// @param _vaultAdapter the vault adapter address
     /// @param _vault the vault address
     /// @param _batchInfo Struct containing batch information
     /// @return _assetData Struct containing calculated asset data
     function _calculateAssetData(
         IERC4626 _metawallet,
-        IMinimalSmartAccount _kMinterAdapter,
         IMinimalSmartAccount _vaultAdapter,
         IkStakingVault _vault,
         BatchInfo memory _batchInfo
     )
         internal
+        view
         returns (AssetData memory _assetData)
     {
         // Get current shares and assets in the DN adapter
         _assetData._dnAdapterShares = _metawallet.balanceOf(address(_vaultAdapter));
         _assetData._dnAdapterAssets = _metawallet.convertToAssets(_assetData._dnAdapterShares);
         // Calculate netted assets (difference between deposited and requested)
-        _assetData._nettedAssets = _nettedAssets(
-            _assetData._dnAdapterAssets,
-            _batchInfo._deposited,
-            _batchInfo._pendingShares,
-            _metawallet,
-            _kMinterAdapter,
-            _vaultAdapter,
-            _vault
+        _assetData._nettedAssets = _computeNettedAssets(
+            _assetData._dnAdapterAssets, _batchInfo._deposited, _batchInfo._pendingShares, _vault
         );
 
         _assetData._newTotalAssets = _assetData._dnAdapterAssets;
     }
 
-    /// @dev Handles the netting process by transferring assets between adapters based on the difference
+    /// @dev Computes the netting value (deposits minus requested assets) without executing any transfer.
+    ///      The actual MetaWallet share transfer is deferred to _executeProposalNetting.
     /// @param _dnAdapterAssets Current assets in the DN adapter
     /// @param _deposited Total amount deposited in the batch
     /// @param _pendingShares Number of shares pending redemption
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _dnVaultAdapter Address of the DN vault adapter
+    /// @param _vault The staking vault for share-to-asset conversion
     /// @return The net amount of assets after netting (can be negative)
-    function _nettedAssets(
+    function _computeNettedAssets(
         uint256 _dnAdapterAssets,
         uint256 _deposited,
         uint256 _pendingShares,
-        IERC4626 _dnMetaWallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _dnVaultAdapter,
         IkStakingVault _vault
     )
         internal
+        view
         returns (int256)
     {
         // Convert pending shares to assets using current adapter totals
@@ -483,24 +507,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _vault.convertToAssetsWithTotals(_pendingShares, _dnAdapterAssets, _vault.totalSupply());
 
         // Calculate net difference between deposited and requested
-        int256 _nettedAssets_ = int256(_deposited) - int256(_requestedAssets);
-
-        // If no netting needed, return early
-        if (_nettedAssets_ == 0) return 0;
-
-        // Convert netted assets to shares for transfer
-        uint256 _nettedShares = _dnMetaWallet.convertToShares(_nettedAssets_.abs());
-
-        // Execute the netted transfer between adapters
-        _executeNettedTransfer(
-            _nettedAssets_ > 0,
-            address(_dnMetaWallet),
-            address(_kMinterAdapter),
-            address(_dnVaultAdapter),
-            _nettedShares
-        );
-
-        return _nettedAssets_;
+        return int256(_deposited) - int256(_requestedAssets);
     }
 
     /// @notice Executes the netted transfer between adapters
