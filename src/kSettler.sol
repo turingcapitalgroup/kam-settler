@@ -26,10 +26,10 @@ import {
     KSETTLER_INVALID_VAULT_TYPE,
     KSETTLER_MISSING_ALLOWANCE,
     KSETTLER_PROPOSAL_ALREADY_FINALISED,
-    KSETTLER_PROPOSAL_NOT_EXECUTED
+    KSETTLER_PROPOSAL_NOT_EXECUTED,
+    KSETTLER_PROPOSAL_STILL_PENDING
 } from "./errors/Errors.sol";
 
-import "forge-std/console2.sol";
 import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
 import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
 import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
@@ -331,7 +331,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     function clearCancelledSettlement(bytes32 _proposalId) external {
         _lockReentrant();
         _checkRoles(SETTLER_RELAYER_ROLE);
-        require(!kAssetRouter.isProposalPending(_proposalId), KSETTLER_PROPOSAL_NOT_EXECUTED);
+        require(!kAssetRouter.isProposalPending(_proposalId), KSETTLER_PROPOSAL_STILL_PENDING);
         delete pendingSettlements[_proposalId];
     }
 

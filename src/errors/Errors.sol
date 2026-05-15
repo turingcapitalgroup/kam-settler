@@ -16,6 +16,7 @@ pragma solidity 0.8.30;
 //   KS10 - Missing MetaWallet approval from kMinterAdapter to vaultAdapter
 //   KS11 - Proposal already finalised
 //   KS12 - Metawallet asset does not match _asset argument
+//   KS13 - Proposal still pending in router (not yet cancelled or executed)
 
 string constant KSETTLER_BATCH_ALREADY_CLOSED = "KS1";
 string constant KSETTLER_BATCH_ALREADY_SETTLED = "KS2";
@@ -29,3 +30,4 @@ string constant KSETTLER_INVALID_TARGET_TYPE = "KS9";
 string constant KSETTLER_MISSING_ALLOWANCE = "KS10";
 string constant KSETTLER_PROPOSAL_ALREADY_FINALISED = "KS11";
 string constant KSETTLER_ASSET_MISMATCH = "KS12";
+string constant KSETTLER_PROPOSAL_STILL_PENDING = "KS13";
