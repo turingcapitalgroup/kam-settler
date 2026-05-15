@@ -214,10 +214,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         int256 _depeg =
             int256(_metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)))) - int256(_valueBefore);
 
-        BatchInfo memory _batchInfo = _getBatchInfo(_vault);
-        require(!_batchInfo.isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
-        require(!_batchInfo.isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
-        _vault.closeBatch(_batchInfo.batchId, true);
+        (bytes32 _batchId,, bool _isClosed, bool _isSettled) = _vault.getCurrentBatchInfo();
+        require(!_isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
+        require(!_isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
+        _vault.closeBatch(_batchId, true);
 
         bool _hasSupply = _vault.totalSupply() != 0;
 
@@ -232,7 +232,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             _newTotalAssets = _metawallet.convertToAssets(uint256(_projected));
         }
 
-        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchInfo.batchId, _newTotalAssets);
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchId, _newTotalAssets);
 
         // Only kSettler-derived state needs to survive into execute. Asset / adapters / netted are
         // all on the router proposal and re-derived there.
@@ -479,13 +479,6 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         bytes memory _executionCalldata = ExecutionLib.encodeBatch(_executions);
         ModeCode _mode = ModeLib.encodeSimpleBatch();
         _adapter.execute(_mode, _executionCalldata);
-    }
-
-    /// @notice Reads the current batch's id and closed/settled flags for a vault
-    /// @dev Deposits and requested shares are no longer read here: the router computes the netting
-    ///      itself in `_computeNetting` and the kSettler reads `proposal.netted` back after propose.
-    function _getBatchInfo(IkStakingVault _vault) internal view returns (BatchInfo memory _batchInfo) {
-        (_batchInfo.batchId,, _batchInfo.isClosed, _batchInfo.isSettled) = _vault.getCurrentBatchInfo();
     }
 
     /// @notice Moves netted MetaWallet shares between the kMinter and DN vault adapters
