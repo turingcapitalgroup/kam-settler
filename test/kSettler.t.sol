@@ -141,15 +141,18 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 metawalletUsdcBalanceBefore = tokens.usdc.balanceOf(address(metawalletUSDC));
         bytes32 proposalId = _closeMinterBatch();
         assertNotEq(proposalId, bytes32(0));
-        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(metawalletUSDC));
 
-        assertEq(metawalletUsdcBalanceAfter - metawalletUsdcBalanceBefore, depositAmount - requestAmount);
-        adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
-        assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
+        // Before execution, balances should be unchanged
+        uint256 metawalletUsdcBalanceAfterProposal = tokens.usdc.balanceOf(address(metawalletUSDC));
+        assertEq(metawalletUsdcBalanceAfterProposal, metawalletUsdcBalanceBefore);
 
         _executeSettlement(proposalId);
+
+        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(metawalletUSDC));
+        assertEq(metawalletUsdcBalanceAfter - metawalletUsdcBalanceBefore, depositAmount - requestAmount);
+
         uint256 finalAdapterBalance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
-        assertEq(adapterBalanceAfter - finalAdapterBalance, requestAmount);
+        assertEq(finalAdapterBalance, adapterBalanceBefore);
 
         vm.prank(users.institution);
         minter.burn(requestId);
@@ -177,16 +180,17 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 proposalId = _closeMinterBatch();
         assertNotEq(proposalId, bytes32(0));
 
-        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(metawalletUSDC));
-
-        assertEq(metawalletUsdcBalanceBefore - metawalletUsdcBalanceAfter, requestAmount - depositAmount);
-        adapterBalanceAfter = tokens.usdc.balanceOf(address(minterAdapterUSDC));
-
-        assertEq(adapterBalanceAfter - adapterBalanceBefore, requestAmount);
+        // Before execution, balances should be unchanged
+        uint256 metawalletUsdcBalanceAfterProposal = tokens.usdc.balanceOf(address(metawalletUSDC));
+        assertEq(metawalletUsdcBalanceAfterProposal, metawalletUsdcBalanceBefore);
 
         _executeSettlement(proposalId);
+
+        uint256 metawalletUsdcBalanceAfter = tokens.usdc.balanceOf(address(metawalletUSDC));
+        assertEq(metawalletUsdcBalanceBefore - metawalletUsdcBalanceAfter, requestAmount - depositAmount);
+
         uint256 finalAdapterBalance = tokens.usdc.balanceOf(address(minterAdapterUSDC));
-        assertEq(adapterBalanceAfter - finalAdapterBalance, requestAmount);
+        assertEq(finalAdapterBalance, adapterBalanceBefore);
 
         vm.prank(users.institution);
         minter.burn(requestId);
@@ -203,12 +207,12 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 requestId = vault.requestStake(users.alice, users.alice, depositAmount);
         uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(adapterBalanceAfter, adapterBalanceBefore);
+        uint256 adapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
         _executeSettlement(proposalId);
-        adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
         vm.prank(users.alice);
@@ -237,12 +241,12 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 requestId = vault.requestStake(users.alice, users.alice, requestAmount);
         uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(adapterBalanceAfter, adapterBalanceBefore);
+        uint256 adapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
         assertEq(assetRouter.getSettlementProposal(proposalId).yield, 0);
 
         _acceptAndExecute(proposalId);
-        adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
         vm.prank(users.alice);
@@ -276,11 +280,11 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(adapterBalanceAfter, adapterBalanceBefore);
+        uint256 adapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
 
         _acceptAndExecute(proposalId);
-        adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
         assertGt(adapterBalanceAfter, adapterBalanceBefore);
 
         uint256 aliceSharesBefore = vault.balanceOf(users.alice);
@@ -489,12 +493,16 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
+        // Before execution, insurance balance should be unchanged
+        uint256 insuranceBalanceAfterProposal = metawalletUSDC.balanceOf(insurance);
+        assertEq(insuranceBalanceAfterProposal, insuranceBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+
         uint256 insuranceBalanceAfter = metawalletUSDC.balanceOf(insurance);
         uint256 insuranceSharesReceived = insuranceBalanceAfter - insuranceBalanceBefore;
 
         assertApproxEqAbs(insuranceSharesReceived, expectedInsuranceShares, 5);
-
-        _acceptAndExecute(proposalId);
     }
 
     function test_settler_profit_distribution_to_treasury() public {
@@ -534,11 +542,15 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
+        // Before execution, treasury balance should be unchanged
+        uint256 treasuryBalanceAfterProposal = metawalletUSDC.balanceOf(treasury);
+        assertEq(treasuryBalanceAfterProposal, treasuryBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+
         uint256 treasurySharesReceived = metawalletUSDC.balanceOf(treasury) - treasuryBalanceBefore;
 
         assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 5);
-
-        _acceptAndExecute(proposalId);
     }
 
     function test_settler_profit_distribution_insurance_and_treasury() public {
@@ -581,6 +593,12 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
+        // Before execution, balances should be unchanged
+        uint256 insuranceBalanceAfterProposal = metawalletUSDC.balanceOf(insurance);
+        assertEq(insuranceBalanceAfterProposal, insuranceBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+
         uint256 insuranceBalanceAfter = metawalletUSDC.balanceOf(insurance);
         uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
 
@@ -589,8 +607,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         assertApproxEqAbs(insuranceSharesReceived, expectedInsuranceShares, 5);
         assertApproxEqAbs(treasurySharesReceived, expectedTreasuryShares, 5);
-
-        _acceptAndExecute(proposalId);
     }
 
     function test_settler_dn_batch_all_profit_distributed() public {
@@ -625,16 +641,25 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         // All profit shares should go to vault adapter (no partial distribution).
         // Snapshot metawallet state in a dedicated frame to keep this test within EVM stack limits.
-        (uint256 expectedVaultAdapterProfitShares,,) = _computeProfitSharesAndMwState();
+        (uint256 expectedVaultAdapterProfitShares, uint256 mwSupply, uint256 newTotal) =
+            _computeProfitSharesAndMwState();
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        uint256 dnAdapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertEq(dnAdapterBalanceAfterProposal, dnAdapterBalanceBefore);
+
+        _acceptAndExecute(proposalId);
 
         uint256 vaultAdapterSharesReceived =
             metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC)) - dnAdapterBalanceBefore;
 
-        assertApproxEqAbs(vaultAdapterSharesReceived, expectedVaultAdapterProfitShares, _ACCOUNTING_DUST);
+        uint256 nettingShares = (depositAmount * (mwSupply + 1)) / (newTotal + 1);
 
-        _acceptAndExecute(proposalId);
+        assertGt(vaultAdapterSharesReceived, nettingShares);
+
+        uint256 profitShareReceived = vaultAdapterSharesReceived - nettingShares;
+        assertApproxEqAbs(profitShareReceived, expectedVaultAdapterProfitShares, _ACCOUNTING_DUST);
     }
 
     function test_settler_liquidate_insurance() public {
@@ -756,6 +781,11 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, _totalAssets, _rootHash);
         vm.stopPrank();
 
+        uint256 treasuryBalanceAfterProposal = metawalletUSDC.balanceOf(treasury);
+        assertEq(treasuryBalanceAfterProposal, treasuryBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+
         uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
         uint256 dnAdapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
 
@@ -765,8 +795,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         // DN vault adapter should NOT have received any profit shares (zero supply guard)
         // The residual that would have gone to vault adapter is routed to treasury instead
         assertEq(dnAdapterBalanceAfter, dnAdapterBalanceBefore);
-
-        _acceptAndExecute(proposalId);
     }
 
     function test_settler_zero_supply_profit_all_to_treasury_when_no_insurance() public {
@@ -789,12 +817,15 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
 
+        uint256 treasuryBalanceAfterProposal = metawalletUSDC.balanceOf(treasury);
+        assertEq(treasuryBalanceAfterProposal, treasuryBalanceBefore);
+
+        _acceptAndExecute(proposalId);
+
         uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
 
         // Treasury should have received both its BPS cut and the residual
         assertGt(treasuryBalanceAfter, treasuryBalanceBefore);
-
-        _acceptAndExecute(proposalId);
     }
 
     function _setupInsurancePermissions(address insurance) internal {
@@ -957,5 +988,39 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vm.prank(users.relayer);
         vm.expectRevert(bytes(KSETTLER_ASSET_MISMATCH));
         settler.liquidateInsurance(wrongAsset, address(metawalletUSDC));
+    }
+
+    function test_settler_cancel_proposal() public {
+        uint256 depositAmount = 100e6;
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        vault.requestStake(users.alice, users.alice, depositAmount);
+        vm.stopPrank();
+
+        uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+
+        // Assert that balances did not change yet (due to deferred execution)
+        uint256 adapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
+
+        // Now cancel the proposal in the router
+        vm.prank(users.guardian);
+        assetRouter.cancelProposal(proposalId);
+
+        // Ensure that clearing the cancelled proposal from the settler works
+        vm.prank(users.relayer);
+        settler.clearCancelledSettlement(proposalId);
+
+        // Balances should still be unchanged
+        uint256 adapterBalanceAfterCancel = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
+        assertEq(adapterBalanceAfterCancel, adapterBalanceBefore);
+
+        // Expect revert if we try to execute the cancelled proposal
+        vm.prank(users.relayer);
+        vm.expectRevert();
+        settler.executeSettleBatch(proposalId);
     }
 }
