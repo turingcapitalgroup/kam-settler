@@ -38,6 +38,20 @@ interface IkSettler {
         bool isSettled;
     }
 
+    /// @notice kSettler-only state that survives between propose and execute for a DN settlement
+    /// @dev Asset / vault / adapters / netted are read off the router proposal at execute time and
+    ///      therefore not duplicated here. Minter settlements need no kSettler state at all.
+    /// @param depegSharesVault Signed MetaWallet shares to deliver to the DN vault adapter as
+    ///        depeg-driven movement (positive = profit, negative = loss). Combined with the netted
+    ///        share movement (derived from `proposal.netted` at execute) for a single transfer.
+    /// @param sharesToInsurance MetaWallet shares to transfer from the kMinter adapter to insurance
+    /// @param sharesToTreasury  MetaWallet shares to transfer from the kMinter adapter to treasury
+    struct DNPendingSettlement {
+        int256 depegSharesVault;
+        uint256 sharesToInsurance;
+        uint256 sharesToTreasury;
+    }
+
     /*//////////////////////////////////////////////////////////////
                               FUNCTIONS
     //////////////////////////////////////////////////////////////*/
