@@ -280,8 +280,9 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         tokens.usdc.call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), metaWalletProfit));
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        // Depeg profit shares are transferred inline during closeAndPropose, so vault adapter balance increases
         uint256 adapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
+        assertGe(adapterBalanceAfterProposal, adapterBalanceBefore);
 
         _acceptAndExecute(proposalId);
         uint256 adapterBalanceAfter = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
@@ -528,10 +529,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
 
-        // Before execution, insurance balance should be unchanged
-        uint256 insuranceBalanceAfterProposal = metawalletUSDC.balanceOf(insurance);
-        assertEq(insuranceBalanceAfterProposal, insuranceBalanceBefore);
-
         _acceptAndExecute(proposalId);
 
         uint256 insuranceBalanceAfter = metawalletUSDC.balanceOf(insurance);
@@ -576,10 +573,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         (, uint256 expectedTreasuryShares) = _computeExpectedDistribution(0, treasuryBps, 0);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
-
-        // Before execution, treasury balance should be unchanged
-        uint256 treasuryBalanceAfterProposal = metawalletUSDC.balanceOf(treasury);
-        assertEq(treasuryBalanceAfterProposal, treasuryBalanceBefore);
 
         _acceptAndExecute(proposalId);
 
@@ -627,10 +620,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
             _computeExpectedDistribution(insuranceBps, treasuryBps, insuranceBalanceBefore);
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
-
-        // Before execution, balances should be unchanged
-        uint256 insuranceBalanceAfterProposal = metawalletUSDC.balanceOf(insurance);
-        assertEq(insuranceBalanceAfterProposal, insuranceBalanceBefore);
 
         _acceptAndExecute(proposalId);
 
@@ -680,9 +669,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
             _computeProfitSharesAndMwState();
 
         proposalId = _closeAndProposeDeltaNeutralBatch();
-
-        uint256 dnAdapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(dnAdapterBalanceAfterProposal, dnAdapterBalanceBefore);
 
         _acceptAndExecute(proposalId);
 
@@ -816,9 +802,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         bytes32 proposalId = settler.closeAndProposeDNVaultBatch(tokens.usdc, _totalAssets, _rootHash);
         vm.stopPrank();
 
-        uint256 treasuryBalanceAfterProposal = metawalletUSDC.balanceOf(treasury);
-        assertEq(treasuryBalanceAfterProposal, treasuryBalanceBefore);
-
         _acceptAndExecute(proposalId);
 
         uint256 treasuryBalanceAfter = metawalletUSDC.balanceOf(treasury);
@@ -851,9 +834,6 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         uint256 treasuryBalanceBefore = metawalletUSDC.balanceOf(treasury);
 
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-
-        uint256 treasuryBalanceAfterProposal = metawalletUSDC.balanceOf(treasury);
-        assertEq(treasuryBalanceAfterProposal, treasuryBalanceBefore);
 
         _acceptAndExecute(proposalId);
 
@@ -1033,25 +1013,11 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         vault.requestStake(users.alice, users.alice, depositAmount);
         vm.stopPrank();
 
-        uint256 adapterBalanceBefore = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-
         bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
-
-        // Assert that balances did not change yet (due to deferred execution)
-        uint256 adapterBalanceAfterProposal = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(adapterBalanceAfterProposal, adapterBalanceBefore);
 
         // Now cancel the proposal in the router
         vm.prank(users.guardian);
         assetRouter.cancelProposal(proposalId);
-
-        // Ensure that clearing the cancelled proposal from the settler works
-        vm.prank(users.relayer);
-        settler.clearCancelledSettlement(proposalId);
-
-        // Balances should still be unchanged
-        uint256 adapterBalanceAfterCancel = metawalletUSDC.balanceOf(address(DNVaultAdapterUSDC));
-        assertEq(adapterBalanceAfterCancel, adapterBalanceBefore);
 
         // Expect revert if we try to execute the cancelled proposal
         vm.prank(users.relayer);

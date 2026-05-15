@@ -14,9 +14,9 @@ The contract is non-upgradeable. All transactions sent to the kSettler are trigg
 
 ### `src/kSettler.sol`
 Core orchestration contract. Inherits `OptimizedOwnableRoles` (Solady) for gas-efficient role management. Contains all settlement logic:
-- **kMinter batch**: `closeAndProposeMinterBatch` closes the kMinter batch, calculates netting (deposited - requested), rebalances with the MetaWallet (deposit or requestRedeem+redeem), and proposes settlement.
-- **DN vault batch**: `_closeAndProposeDNVaultBatch` closes the DN vault batch, computes depeg (profit/loss), distributes profit (insurance -> treasury -> vault adapter), executes netting transfers between adapters, and proposes settlement.
-- **Execution helpers**: `executeSettleBatch`, `acceptProposal`, `cancelProposal` for proposal lifecycle.
+- **kMinter batch**: `closeAndProposeMinterBatch` closes the kMinter batch, calculates netting (deposited - requested), and proposes settlement. Netting transfers are deferred to `executeSettleBatch`.
+- **DN vault batch**: `_closeAndProposeDNVaultBatch` closes the DN vault batch, computes depeg (profit/loss), distributes profit inline (insurance -> treasury -> vault adapter), and proposes settlement. Netting transfers are deferred to `executeSettleBatch`.
+- **Execution helpers**: `executeSettleBatch` reads the proposal from the router and executes deferred netting transfers (minter deposit/withdraw, DN vault share transfer) before calling `kAssetRouter.executeSettleBatch`. `acceptProposal`, `cancelProposal` for proposal lifecycle.
 - **Alpha/Beta**: `finaliseCustodialSettlement` handles post-settlement fund movement to/from CEFFU custody.
 - **Insurance**: `liquidateInsurance` redeems insurance's MetaWallet shares to underlying assets.
 - **Profit distribution**: `_distributeProfitShares` implements the insurance -> treasury -> vault adapter priority.
@@ -113,10 +113,10 @@ The settlement lifecycle is a multi-step process driven by the relayer and backe
 ```
 
 **Step 1 -- kMinter Batch** (`closeAndProposeMinterBatch`):
-Closes the kMinter batch and calculates `nettedAmount = deposited - requested`. If negative (more redemptions than deposits), redeems shares from the MetaWallet to cover. If positive, deposits excess assets into the MetaWallet. Returns a `proposalId` (or `bytes32(0)` if netting is zero).
+Closes the kMinter batch. The physical MetaWallet deposit/withdrawal based on `nettedAmount = deposited - requested` is deferred to `executeSettleBatch`, which reads the netted amount from the router proposal. Returns a `proposalId`.
 
 **Step 2 -- DN Vault Batch** (`closeAndProposeDNVaultBatch`):
-Closes the DN vault batch. Calculates depeg: `actualKMinterAssets - expectedKMinterAssets` (positive = profit, negative = loss). On profit: distributes to insurance, treasury, and vault adapter in priority order, then transfers remaining profit shares to the DN adapter. On loss: transfers shares from the DN adapter to the kMinter adapter to cover the deficit. Finally, executes netting transfers between kMinter and DN adapters and calls `kAssetRouter.proposeSettleBatch()`.
+Closes the DN vault batch. Calculates depeg: `actualKMinterAssets - expectedKMinterAssets` (positive = profit, negative = loss). On profit: distributes to insurance, treasury, and vault adapter in priority order **inline**. On loss: transfers shares from the vault adapter to the kMinter adapter **inline**. The netting transfer between adapters is deferred to `executeSettleBatch`. Calls `kAssetRouter.proposeSettleBatch()`.
 
 During `proposeSettleBatch`, the router calculates `yield = totalAssets - lastTotalAssets` and checks it against the `maxAllowedDelta` threshold (default 10%). If `abs(yield) > lastTotalAssets * maxAllowedDelta / 10_000`, the proposal is flagged with `requiresApproval = true` and a `YieldExceedsMaxDeltaWarning` event is emitted. This acts as a circuit breaker for anomalous yield values that could indicate calculation errors or manipulation.
 
@@ -129,7 +129,7 @@ When yield breaks the delta threshold in either direction, the backend sends an 
 If yield is within the delta threshold, no approval step is needed -- the proposal can be executed directly after the cooldown period.
 
 **Step 4 -- Execute Settlement** (`executeSettleBatch`):
-A cronjob queries `kAssetRouter.getPendingProposals(vault)` for pending proposal IDs, checks `canExecuteProposal(proposalId)` (verifies cooldown has passed and approval status), and if ready, calls `settler.executeSettleBatch(proposalId)`. This finalizes the batch in the router: mints/burns kTokens to distribute yield or socialize losses, updates adapter `totalAssets`, and marks the batch as settled.
+A cronjob queries `kAssetRouter.getPendingProposals(vault)` for pending proposal IDs, checks `canExecuteProposal(proposalId)` (verifies cooldown has passed and approval status), and if ready, calls `settler.executeSettleBatch(proposalId)`. This reads the proposal from the router to determine the vault type and executes the deferred netting transfers (minter deposit/withdraw or DN vault share transfer). Then it calls `kAssetRouter.executeSettleBatch` which finalizes the batch: mints/burns kTokens to distribute yield or socialize losses, updates adapter `totalAssets`, and marks the batch as settled.
 
 **Step 5 -- Custodial Finalization** (`finaliseCustodialSettlement`, Alpha/Beta only):
 For custodial vaults (Alpha/Beta), redeems the netted shares from the MetaWallet via the kMinter adapter and transfers the underlying assets to the custodial target (CEFFU). If netting is negative, deposits assets into the MetaWallet instead.
