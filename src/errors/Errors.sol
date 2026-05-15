@@ -17,6 +17,7 @@ pragma solidity 0.8.30;
 //   KS11 - Proposal already finalised
 //   KS12 - Metawallet asset does not match _asset argument
 //   KS13 - Proposal still pending in router (not yet cancelled or executed)
+//   KS14 - Depeg loss exceeds DN adapter MetaWallet position
 
 string constant KSETTLER_BATCH_ALREADY_CLOSED = "KS1";
 string constant KSETTLER_BATCH_ALREADY_SETTLED = "KS2";
@@ -31,3 +32,4 @@ string constant KSETTLER_MISSING_ALLOWANCE = "KS10";
 string constant KSETTLER_PROPOSAL_ALREADY_FINALISED = "KS11";
 string constant KSETTLER_ASSET_MISMATCH = "KS12";
 string constant KSETTLER_PROPOSAL_STILL_PENDING = "KS13";
+string constant KSETTLER_DEPEG_LOSS_EXCEEDS_DN_POSITION = "KS14";

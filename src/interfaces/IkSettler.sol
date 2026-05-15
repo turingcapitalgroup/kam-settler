@@ -28,46 +28,14 @@ interface IkSettler {
                               STRUCTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Contains information about a batch operation
-    /// @param _batchId Unique identifier for the batch
-    /// @param _deposited Total amount of assets deposited in the batch
-    /// @param _pendingShares Number of shares pending in the batch
+    /// @notice Closed/settled status snapshot for a vault batch
+    /// @param _batchId The batch identifier
     /// @param _isClosed Whether the batch has been closed
     /// @param _isSettled Whether the batch has been settled
     struct BatchInfo {
         bytes32 _batchId;
-        uint256 _deposited;
-        uint256 _pendingShares;
         bool _isClosed;
         bool _isSettled;
-    }
-
-    /// @notice Contains all relevant addresses for vault operations
-    /// @param _vault The delta-neutral vault address
-    /// @param _kMinter The kMinter contract address
-    /// @param _kMinterAdapter The adapter for kMinter operations
-    /// @param _kAssetRouter The asset router contract
-    /// @param _dnVaultAdapter The adapter for delta-neutral vault operations
-    /// @param _kToken The kToken contract address
-    struct VaultAddresses {
-        IkStakingVault _vault;
-        IkMinter _kMinter;
-        IVaultAdapter _kMinterAdapter;
-        IkAssetRouter _kAssetRouter;
-        IVaultAdapter _dnVaultAdapter;
-        IkToken _kToken;
-    }
-
-    /// @notice Contains calculated asset data for settlement
-    /// @param _dnAdapterAssets Current assets in the delta-neutral adapter
-    /// @param _dnAdapterShares Current shares in the delta-neutral adapter
-    /// @param _nettedAssets Net assets after settlement calculations
-    /// @param _newTotalAssets Total assets after settlement
-    struct AssetData {
-        uint256 _dnAdapterAssets;
-        uint256 _dnAdapterShares;
-        int256 _nettedAssets;
-        uint256 _newTotalAssets;
     }
 
     /*//////////////////////////////////////////////////////////////

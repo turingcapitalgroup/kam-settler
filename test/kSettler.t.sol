@@ -325,6 +325,41 @@ contract kSettlerTest is BaseVaultTest, DeployMetaWallet {
         assertGt(sharePriceAfter, sharePriceBefore);
     }
 
+    function test_settler_dn_settlement_no_drift_with_fees() public {
+        test_settler_kminter_netted_positive();
+
+        uint256 stakeAmount = 200e6;
+        vm.startPrank(users.alice);
+        kUSD.approve(address(vault), type(uint256).max);
+        bytes32 stakeReq = vault.requestStake(users.alice, users.alice, stakeAmount);
+        vm.stopPrank();
+
+        bytes32 proposalId = _closeAndProposeDeltaNeutralBatch();
+        _executeSettlement(proposalId);
+
+        vm.prank(users.alice);
+        vault.claimStakedShares(stakeReq);
+
+        _setupTestFees();
+
+        vm.warp(block.timestamp + 30 days);
+
+        uint256 unstakeShares = vault.balanceOf(users.alice) / 2;
+        vm.prank(users.alice);
+        vault.requestUnstake(users.alice, users.alice, unstakeShares);
+
+        uint256 yieldAmount = 50_000e6;
+        (bool ok,) = tokens.usdc
+            .call(abi.encodeWithSignature("mint(address,uint256)", address(metawalletUSDC), yieldAmount));
+        require(ok);
+
+        proposalId = _closeAndProposeDeltaNeutralBatch();
+        _executeSettlement(proposalId);
+
+        IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
+        assertGt(proposal.managementFees + proposal.performanceFees, 0, "expected non-zero settlement fees");
+    }
+
     function _closeMinterBatch() internal returns (bytes32 proposalId) {
         vm.startPrank(users.relayer);
         proposalId = settler.closeAndProposeMinterBatch(tokens.usdc);
