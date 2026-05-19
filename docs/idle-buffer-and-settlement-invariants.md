@@ -31,7 +31,7 @@ This is a hard revert: if insufficient idle, the entire operation fails. The kSe
 
 ### DN vault settlement has no idle check
 
-`_closeAndProposeDNVaultBatch` does NOT perform any MetaWallet withdrawal. It only transfers shares between adapters (rebalance + netting). The `settleTotalAssets` call updates virtual accounting. So the DN vault path does not directly interact with the idle buffer. However, the **kMinter settlement** (`closeAndProposeMinterBatch`) DOES redeem from the MetaWallet when netting is negative (more requests than deposits), and this redemption competes with the idle buffer.
+`_closeAndProposeDNVaultBatch` does NOT perform any MetaWallet withdrawal. It only executes depeg-related share transfers inline and defers netting transfers to `executeSettleBatch`. The `settleTotalAssets` call updates virtual accounting. So the DN vault path does not directly interact with the idle buffer. However, the **kMinter settlement** (`closeAndProposeMinterBatch`) DOES defer MetaWallet deposit/withdrawal to `executeSettleBatch`, and this withdrawal competes with the idle buffer.
 
 ### No cross-layer invariant checks
 
