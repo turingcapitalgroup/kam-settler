@@ -12,3 +12,8 @@ broadcast/
 # Soldeer
 /dependencies
 soldeer.lock
+
+#AI
+.letta
+.trigrep
+superpowers/

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
-import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
 import { BaseHandler } from "kam/test/invariant/handlers/BaseHandler.t.sol";
 import { AddressSet, LibAddressSet } from "kam/test/invariant/helpers/AddressSet.sol";
 import { Bytes32Set, LibBytes32Set } from "kam/test/invariant/helpers/Bytes32Set.sol";
@@ -22,6 +21,8 @@ contract kSettlerHandler is BaseHandler {
     using SafeTransferLib for address;
     using LibBytes32Set for Bytes32Set;
     using LibAddressSet for AddressSet;
+
+    uint256 internal constant ACCOUNTING_DUST = 5;
 
     // Core contracts
     kSettler settler;
@@ -85,10 +86,6 @@ contract kSettlerHandler is BaseHandler {
     uint256 public dnActualSharePrice;
     int256 public dnSharePriceDelta;
 
-    // Fee tracking
-    uint256 lastFeesChargedManagement;
-    uint256 lastFeesChargedPerformance;
-
     constructor(
         address _settler,
         address _kMinter,
@@ -121,9 +118,6 @@ contract kSettlerHandler is BaseHandler {
         for (uint256 i = 0; i < _minterActors.length; i++) {
             minterActors.add(_minterActors[i]);
         }
-
-        lastFeesChargedManagement = 1;
-        lastFeesChargedPerformance = 1;
     }
 
     // //////////////////////////////////////////////////////////////
@@ -181,11 +175,13 @@ contract kSettlerHandler is BaseHandler {
             return;
         }
         kToken.safeApprove(address(kMinter), amount);
-        // Check if total requested (including this new request) would exceed virtual balance
-        bytes32 currentBatchId = kMinter.getBatchId(token);
-        uint256 currentRequested = kMinter.getBatchInfo(currentBatchId).requestedSharesInBatch;
-        uint256 virtualBal = assetRouter.virtualBalance(address(kMinter), token);
-        if (virtualBal < currentRequested + amount) {
+
+        // Mirror kAssetRouter.kAssetRequestPull -> _checkSufficientVirtualBalance.
+        // Verified against dependencies/kam-v1/src/kAssetRouter.sol:186-189 and 814-819, and
+        // dependencies/kam-v1/test/invariant/handlers/kMinterHandler.t.sol:110-141.
+        // The router checks cross-batch global pending requests, adjusted by netting of all open
+        // proposals. Per-batch `requestedSharesInBatch` is insufficient.
+        if (_willRequestBurnRevert(amount)) {
             vm.expectRevert();
             kMinter.requestBurn(token, actor, amount);
             vm.stopPrank();
@@ -200,6 +196,30 @@ contract kSettlerHandler is BaseHandler {
         minterActualAdapterTotalAssets = minterAdapter.totalAssets();
         minterNettedInBatch -= int256(amount);
         minterTotalNetted -= int256(amount);
+    }
+
+    /// @notice Predicts whether `kMinter.requestBurn(token, _, amount)` would revert with A6
+    /// @dev Mirrors `kAssetRouter._checkSufficientVirtualBalance` semantics: virtual balance
+    ///      adjusted by signed netting of every pending proposal must cover the global pending
+    ///      request total after adding `amount`.
+    function _willRequestBurnRevert(uint256 amount) internal view returns (bool) {
+        uint256 virtualBal = assetRouter.virtualBalance(address(kMinter), token);
+        uint256 globalPending = assetRouter.getGlobalPendingRequests(address(kMinter), token);
+        uint256 totalRequested = globalPending + amount;
+
+        int256 virtualBalInt = int256(virtualBal);
+        if (assetRouter.getPendingProposalCount(address(kMinter)) > 0) {
+            bytes32[] memory pendingProposals = assetRouter.getPendingProposals(address(kMinter));
+            for (uint256 i = 0; i < pendingProposals.length; i++) {
+                IkAssetRouter.VaultSettlementProposal memory openProposal =
+                    assetRouter.getSettlementProposal(pendingProposals[i]);
+                if (openProposal.asset == token) {
+                    virtualBalInt += openProposal.netted;
+                }
+            }
+        }
+        if (virtualBalInt < 0) return true;
+        return uint256(virtualBalInt) < totalRequested;
     }
 
     function settler_burn(uint256 actorSeed, uint256 requestSeedIndex) public {
@@ -222,7 +242,11 @@ contract kSettlerHandler is BaseHandler {
         kMinter.burn(requestId);
         vm.stopPrank();
 
-        minterExpectedTotalLockedAssets -= amount;
+        // NOTE: kMinter.burn() does NOT mutate $.totalLockedAssets on-chain (verified against
+        // dependencies/kam-v1/src/kMinter.sol:224-262). The decrement of locked assets happens
+        // exclusively in kMinter.settleBatch() during executeSettleBatch — tracked there.
+        // Therefore the expected total stays unchanged here; just refresh the actual reading.
+        amount; // silence unused local: kept for parity with `kMinter.getBurnRequest(_).amount`
         minterActualTotalLockedAssets = kMinter.getTotalLockedAssets(token);
         minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
         minterActualAdapterTotalAssets = minterAdapter.totalAssets();
@@ -301,6 +325,13 @@ contract kSettlerHandler is BaseHandler {
                 minterExpectedAdapterBalance -= actualTransferred;
                 minterActualAdapterBalance = balanceAfter;
                 minterActualAdapterTotalAssets = minterAdapter.totalAssets();
+
+                // kMinter.settleBatch() (called by router.executeSettleBatch) decrements
+                // $.totalLockedAssets by `requestedSharesInBatch`. Mirror it.
+                // Verified against dependencies/kam-v1/src/kMinter.sol:308-309 and
+                // dependencies/kam-v1/test/invariant/handlers/kMinterHandler.t.sol:289-292.
+                minterExpectedTotalLockedAssets -= kMinter.getBatchInfo(proposal.batchId).requestedSharesInBatch;
+                minterActualTotalLockedAssets = kMinter.getTotalLockedAssets(token);
             } catch {
                 // Settlement failed - skip this proposal
             }
@@ -350,26 +381,18 @@ contract kSettlerHandler is BaseHandler {
                 int256(dnExpectedTotalAssets) + netted + proposal.yield - int256(pendingStakeInBatch[proposal.batchId])
             );
 
-            (,,,,, uint256 totalAssets, uint256 totalNetAssets,,,) = dnVault.getBatchIdInfo(proposal.batchId);
+            (,,,, uint256 totalAssets,,,) = dnVault.getBatchIdInfo(proposal.batchId);
+            uint256 totalNetAssets = totalAssets;
             uint256 expectedSharesToBurn;
             if (totalRequestedShares != 0) {
                 uint256 netRequestedShares = totalRequestedShares.fullMulDiv(totalNetAssets, totalAssets);
                 expectedSharesToBurn = totalRequestedShares - netRequestedShares;
-                uint256 feeAssets = VaultMathLib.convertToAssetsWithAssetsAndSupply(
-                    expectedSharesToBurn, dnExpectedTotalAssets, dnExpectedSupply
-                );
-                if (feeAssets != 0) {
-                    dnExpectedTotalAssets -= feeAssets;
-                }
             }
 
             dnExpectedSupply -= expectedSharesToBurn;
-            (,, uint256 expectedFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
-                dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
-            );
             dnActualTotalAssets = dnVault.totalAssets();
-            dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedFees;
-            dnActualNetTotalAssets = dnVault.totalNetAssets();
+            dnExpectedNetTotalAssets = dnExpectedTotalAssets;
+            dnActualNetTotalAssets = dnVault.totalAssets();
 
             uint256 shares = 10 ** dnVault.decimals();
             uint256 totalSupply_ = dnVault.totalSupply();
@@ -467,7 +490,7 @@ contract kSettlerHandler is BaseHandler {
 
         uint256 newTotalAssets = uint256(newTotalAssetsInt);
 
-        requested = VaultMathLib.convertToAssetsWithAssetsAndSupply(requested, newTotalAssets, dnVault.totalSupply());
+        requested = dnVault.convertToAssetsWithTotals(requested, newTotalAssets, dnVault.totalSupply());
         int256 netted = int256(deposited) - int256(requested);
 
         if (netted < 0 && netted.abs() > dnExpectedAdapterTotalAssets) {
@@ -500,7 +523,6 @@ contract kSettlerHandler is BaseHandler {
 
             // Update adapter balance tracking
             dnActualAdapterBalance = metawallet.balanceOf(address(dnVaultAdapter));
-            uint256 minterAdapterMetawalletBalance = metawallet.balanceOf(address(minterAdapter));
             minterActualAdapterBalance = token.balanceOf(address(minterAdapter));
         } catch {
             // Batch close failed - skip
@@ -517,15 +539,15 @@ contract kSettlerHandler is BaseHandler {
         bytes32 requestId = actorStakeRequests[currentActor].rand(requestSeedIndex);
         BaseVaultTypes.StakeRequest memory stakeRequest = dnVault.getStakeRequest(requestId);
         bytes32 batchId = stakeRequest.batchId;
-        (,, bool isSettled,,,, uint256 totalNetAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
+        (,, bool isSettled,, uint256 totalAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
+        uint256 totalNetAssets = totalAssets;
         if (!isSettled) {
             vm.expectRevert();
             dnVault.claimStakedShares(requestId);
             vm.stopPrank();
             return;
         }
-        uint256 sharesToMint =
-            VaultMathLib.convertToSharesWithAssetsAndSupply(stakeRequest.kTokenAmount, totalNetAssets, totalSupply);
+        uint256 sharesToMint = dnVault.convertToSharesWithTotals(stakeRequest.kTokenAmount, totalNetAssets, totalSupply);
         if (sharesToMint == 0) {
             vm.expectRevert(bytes("SV9"));
             dnVault.claimStakedShares(requestId);
@@ -540,11 +562,8 @@ contract kSettlerHandler is BaseHandler {
         dnActualTotalAssets = dnVault.totalAssets();
         dnExpectedSupply += sharesToMint;
         dnActualSupply = dnVault.totalSupply();
-        (,, uint256 expectedNewFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
-            dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
-        );
-        dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
-        dnActualNetTotalAssets = dnVault.totalNetAssets();
+        dnExpectedNetTotalAssets = dnExpectedTotalAssets;
+        dnActualNetTotalAssets = dnVault.totalAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);
         vm.stopPrank();
@@ -559,8 +578,8 @@ contract kSettlerHandler is BaseHandler {
         bytes32 requestId = actorUnstakeRequests[currentActor].rand(requestSeedIndex);
         BaseVaultTypes.UnstakeRequest memory unstakeRequest = dnVault.getUnstakeRequest(requestId);
         bytes32 batchId = unstakeRequest.batchId;
-        (,, bool isSettled,,, uint256 totalAssets, uint256 totalNetAssets, uint256 totalSupply,,) =
-            dnVault.getBatchIdInfo(batchId);
+        (,, bool isSettled,, uint256 totalAssets, uint256 totalSupply,,) = dnVault.getBatchIdInfo(batchId);
+        uint256 totalNetAssets = totalAssets;
         if (!isSettled) {
             vm.expectRevert();
             dnVault.claimUnstakedAssets(requestId);
@@ -568,7 +587,7 @@ contract kSettlerHandler is BaseHandler {
             return;
         }
         uint256 totalKTokensNet =
-            VaultMathLib.convertToAssetsWithAssetsAndSupply(unstakeRequest.stkTokenAmount, totalNetAssets, totalSupply);
+            dnVault.convertToAssetsWithTotals(unstakeRequest.stkTokenAmount, totalNetAssets, totalSupply);
         if (totalKTokensNet == 0) {
             vm.expectRevert(bytes("SV9"));
             dnVault.claimUnstakedAssets(requestId);
@@ -583,11 +602,8 @@ contract kSettlerHandler is BaseHandler {
         dnActualSupply = dnVault.totalSupply();
         dnExpectedTotalAssets -= totalKTokensNet;
         dnActualTotalAssets = dnVault.totalAssets();
-        (,, uint256 expectedNewFees) = VaultMathLib.computeLastBatchFeesWithAssetsAndSupply(
-            dnVault, dnExpectedTotalAssets, dnExpectedSupply, block.timestamp
-        );
-        dnExpectedNetTotalAssets = dnExpectedTotalAssets - expectedNewFees;
-        dnActualNetTotalAssets = dnVault.totalNetAssets();
+        dnExpectedNetTotalAssets = dnExpectedTotalAssets;
+        dnActualNetTotalAssets = dnVault.totalAssets();
         uint256 sharePriceAfter = dnVault.sharePrice();
         dnSharePriceDelta = int256(sharePriceAfter) - int256(sharePriceBefore);
         vm.stopPrank();
@@ -627,9 +643,8 @@ contract kSettlerHandler is BaseHandler {
     function settler_advanceTime(uint256 amount) public {
         amount = bound(amount, 0, 30 days);
         vm.warp(block.timestamp + amount);
-        (,, uint256 totalFees) = dnVault.computeLastBatchFees();
-        dnExpectedNetTotalAssets = dnExpectedTotalAssets - totalFees;
-        dnActualNetTotalAssets = dnVault.totalNetAssets();
+        dnExpectedNetTotalAssets = dnExpectedTotalAssets;
+        dnActualNetTotalAssets = dnVault.totalAssets();
     }
 
     // //////////////////////////////////////////////////////////////
@@ -700,6 +715,17 @@ contract kSettlerHandler is BaseHandler {
         );
     }
 
+    function INVARIANT_MINTER_ADAPTER_MATCHES_METAWALLET_POSITION() public view {
+        // Pending settlement proposals can intentionally move shares before router accounting is updated.
+        if (pendingMinterSettlementProposals.count() != 0 || pendingDNSettlementProposals.count() != 0) return;
+
+        uint256 adapterAssets = minterAdapter.totalAssets();
+        uint256 metawalletAssets = metawallet.convertToAssets(metawallet.balanceOf(address(minterAdapter)));
+        assertApproxEqAbs(
+            metawalletAssets, adapterAssets, ACCOUNTING_DUST, "SETTLER: INVARIANT_MINTER_ADAPTER_METAWALLET_POSITION"
+        );
+    }
+
     function INVARIANT_DN_TOTAL_ASSETS() public view {
         // Skip this invariant if no DN settlement has happened yet
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
@@ -710,6 +736,20 @@ contract kSettlerHandler is BaseHandler {
         // Skip this invariant if no DN settlement has happened yet
         if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
         assertEq(dnExpectedAdapterTotalAssets, dnActualAdapterTotalAssets, "SETTLER: INVARIANT_DN_ADAPTER_TOTAL_ASSETS");
+    }
+
+    function INVARIANT_DN_ADAPTER_MATCHES_VAULT_AND_METAWALLET_POSITION() public view {
+        // Pending settlement proposals can intentionally move shares before router accounting is updated.
+        if (pendingMinterSettlementProposals.count() != 0 || pendingDNSettlementProposals.count() != 0) return;
+        // Skip this invariant if no DN settlement has happened yet
+        if (dnExpectedTotalAssets == 0 && dnExpectedSupply == 0) return;
+
+        uint256 adapterAssets = dnVaultAdapter.totalAssets();
+        uint256 metawalletAssets = metawallet.convertToAssets(metawallet.balanceOf(address(dnVaultAdapter)));
+        assertEq(adapterAssets, dnVault.totalAssets(), "SETTLER: INVARIANT_DN_ADAPTER_VAULT_TOTAL_ASSETS");
+        assertApproxEqAbs(
+            metawalletAssets, adapterAssets, ACCOUNTING_DUST, "SETTLER: INVARIANT_DN_ADAPTER_METAWALLET_POSITION"
+        );
     }
 
     function INVARIANT_DN_SHARE_PRICE() public view {

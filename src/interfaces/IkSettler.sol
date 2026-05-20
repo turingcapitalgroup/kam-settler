@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { IkToken } from "kToken0/interfaces/IkToken.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";
@@ -25,62 +25,36 @@ interface IkSettler {
     event InsuranceLiquidated(address indexed asset, uint256 shares, uint256 assets);
 
     /*//////////////////////////////////////////////////////////////
-                              STRUCTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Contains information about a batch operation
-    /// @param _batchId Unique identifier for the batch
-    /// @param _deposited Total amount of assets deposited in the batch
-    /// @param _pendingShares Number of shares pending in the batch
-    /// @param _isClosed Whether the batch has been closed
-    /// @param _isSettled Whether the batch has been settled
-    struct BatchInfo {
-        bytes32 _batchId;
-        uint256 _deposited;
-        uint256 _pendingShares;
-        bool _isClosed;
-        bool _isSettled;
-    }
-
-    /// @notice Contains all relevant addresses for vault operations
-    /// @param _vault The delta-neutral vault address
-    /// @param _kMinter The kMinter contract address
-    /// @param _kMinterAdapter The adapter for kMinter operations
-    /// @param _kAssetRouter The asset router contract
-    /// @param _dnVaultAdapter The adapter for delta-neutral vault operations
-    /// @param _kToken The kToken contract address
-    struct VaultAddresses {
-        IkStakingVault _vault;
-        IkMinter _kMinter;
-        IVaultAdapter _kMinterAdapter;
-        IkAssetRouter _kAssetRouter;
-        IVaultAdapter _dnVaultAdapter;
-        IkToken _kToken;
-    }
-
-    /// @notice Contains calculated asset data for settlement
-    /// @param _dnAdapterAssets Current assets in the delta-neutral adapter
-    /// @param _dnAdapterShares Current shares in the delta-neutral adapter
-    /// @param _nettedAssets Net assets after settlement calculations
-    /// @param _newTotalAssets Total assets after settlement
-    struct AssetData {
-        uint256 _dnAdapterAssets;
-        uint256 _dnAdapterShares;
-        int256 _nettedAssets;
-        uint256 _newTotalAssets;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                               FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice grants the _relayer address the relayer role
-    /// @param _relayer address to be granted the relayer role
+    /*//////////////////////////////////////////////////////////////
+                          ROLES MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Grants ADMIN_ROLE to an address
+    /// @dev Only callable by contract owner. Reverts on zero address.
+    /// @param _admin Admin role recipient
+    function grantAdminRole(address _admin) external;
+
+    /// @notice Revokes ADMIN_ROLE from an address
+    /// @dev Only callable by contract owner
+    /// @param _admin Address to strip of admin privileges
+    function revokeAdminRole(address _admin) external;
+
+    /// @notice Grants SETTLER_RELAYER_ROLE to an address
+    /// @dev Only callable by addresses holding ADMIN_ROLE. Reverts on zero address.
+    /// @param _relayer Relayer role recipient
     function grantRelayerRole(address _relayer) external payable;
+
+    /// @notice Revokes SETTLER_RELAYER_ROLE from an address
+    /// @dev Only callable by addresses holding ADMIN_ROLE
+    /// @param _relayer Address to strip of relayer privileges
+    function revokeRelayerRole(address _relayer) external payable;
 
     /// @notice Closes a delta-neutral vault batch and initiates settlement
     /// @dev This function handles the complete settlement process for DN vault batches,
-    ///      including rebalancing, fee calculation, asset netting, and profit distribution.
+    ///      including rebalancing, asset netting, and profit distribution.
     ///      All profit is distributed: insurance (up to target) -> treasury -> vault adapter.
     ///      Atomically settles the MetaWallet's virtualTotalAssets before computing depeg,
     ///      so that profit distribution reflects real strategy yield.
@@ -116,21 +90,17 @@ interface IkSettler {
     function executeSettleBatch(bytes32 _proposalId) external payable;
 
     /// @notice Proposes a settlement batch through the kAssetRouter
-    /// @dev Proposes a settlement batch through the kAssetRouter with fee information
+    /// @dev Proposes a settlement batch through the kAssetRouter
     /// @param _asset The asset address for the settlement
     /// @param _vault The vault address for the settlement
     /// @param _batchId The batch ID for the settlement
     /// @param _totalAssets The total assets for the settlement
-    /// @param _lastFeesChargedManagement The timestamp of last management fee charge
-    /// @param _lastFeesChargedPerformance The timestamp of last performance fee charge
     /// @return _proposalId The proposal ID for the settlement
     function proposeSettleBatch(
         address _asset,
         address _vault,
         bytes32 _batchId,
-        uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
+        uint256 _totalAssets
     )
         external
         payable
@@ -143,10 +113,12 @@ interface IkSettler {
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable;
 
     /// @notice Liquidates insurance's metawallet shares to underlying assets
-    /// @dev Calls redeem through the insurance smart account.
-    ///      After execution, insurance will hold underlying assets instead of metawallet shares.
-    /// @param _asset The asset for which to liquidate insurance shares
-    function liquidateInsurance(address _asset) external payable;
+    /// @dev Calls redeem through the insurance smart account. The caller must specify
+    ///      the metawallet directly so resolution is constant-time and cannot misroute
+    ///      between assets when insurance backs more than one (TOB-KAM-38).
+    /// @param _asset The underlying asset for which to liquidate insurance shares
+    /// @param _metawallet The ERC4626 metawallet to redeem from. Must match _asset.
+    function liquidateInsurance(address _asset, address _metawallet) external payable;
 
     /*//////////////////////////////////////////////////////////////
                               VIEWS

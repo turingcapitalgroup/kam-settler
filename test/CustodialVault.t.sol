@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { console2 as console } from "forge-std/console2.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
@@ -66,8 +66,6 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         ALPHAVaultAdapterUSDC.grantRoles(address(users.relayer), 2);
         BETHAVaultAdapterUSDC.grantRoles(address(users.relayer), 2);
         vm.stopPrank();
-
-        _disableFees();
 
         // Setup param checker for alpha/beta adapters
         vm.startPrank(users.admin);
@@ -166,14 +164,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(
-            tokens.usdc,
-            address(alphaVault),
-            batchId,
-            totalAssets, // Pass actual total assets
-            0, // lastFeesChargedManagement
-            0 // lastFeesChargedPerformance
-        );
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets);
 
         IkAssetRouter.VaultSettlementProposal memory proposal = assetRouter.getSettlementProposal(proposalId);
         assertEq(proposal.vault, address(alphaVault), "Proposal vault mismatch");
@@ -222,7 +213,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets1 = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId1 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId1, totalAssets1, 0, 0);
+        bytes32 proposalId1 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId1, totalAssets1);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId1);
@@ -248,7 +239,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets2 = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId2 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, totalAssets2, 0, 0);
+        bytes32 proposalId2 = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId2, totalAssets2);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId2);
@@ -303,7 +294,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         uint256 totalAssets = IVaultAdapter(address(BETHAVaultAdapterUSDC)).totalAssets();
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, totalAssets);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
@@ -334,7 +325,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         settler.closeVaultBatch(address(betaVault), batchId, true);
 
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(betaVault), batchId, 0);
 
         vm.prank(users.relayer);
         settler.executeSettleBatch(proposalId);
@@ -365,6 +356,41 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         settler.closeVaultBatch(address(minter), batchId, true);
     }
 
+    /// @notice Test that finaliseCustodialSettlement cannot be called twice for the same proposal (TOB-KAM-9)
+    function test_custodial_finaliseCustodialSettlement_reverts_duplicate_call() public {
+        uint256 depositAmount = 100e6;
+        uint256 requestAmount = 50e6;
+
+        _setupKMinterDeposits(depositAmount, requestAmount);
+
+        vault = alphaVault;
+
+        vm.startPrank(users.alice);
+        kUSD.approve(address(alphaVault), type(uint256).max);
+        bytes32 stakeRequestId = alphaVault.requestStake(users.alice, users.alice, depositAmount);
+        vm.stopPrank();
+
+        (bytes32 batchId,,,) = alphaVault.getCurrentBatchInfo();
+        vm.prank(users.relayer);
+        settler.closeVaultBatch(address(alphaVault), batchId, true);
+
+        uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
+        vm.prank(users.relayer);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets);
+
+        vm.prank(users.relayer);
+        settler.executeSettleBatch(proposalId);
+
+        vm.prank(users.relayer);
+        settler.finaliseCustodialSettlement(proposalId);
+
+        assertTrue(settler.finalisedProposals(proposalId));
+
+        vm.prank(users.relayer);
+        vm.expectRevert(bytes("KS11"));
+        settler.finaliseCustodialSettlement(proposalId);
+    }
+
     /// @notice Test that finaliseCustodialSettlement reverts on a cancelled (non-executed) proposal
     function test_custodial_finaliseCustodialSettlement_reverts_cancelled_proposal() public {
         uint256 depositAmount = 100e6;
@@ -390,7 +416,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
         // Propose settlement
         uint256 totalAssets = IVaultAdapter(address(ALPHAVaultAdapterUSDC)).totalAssets();
         vm.prank(users.relayer);
-        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets, 0, 0);
+        bytes32 proposalId = settler.proposeSettleBatch(tokens.usdc, address(alphaVault), batchId, totalAssets);
 
         // Guardian cancels the proposal (removes from pending, does NOT add to executed)
         vm.prank(users.guardian);
@@ -424,20 +450,7 @@ contract CustodialVaultTest is BaseVaultTest, DeployMetaWallet {
 
         if (minterProposalId != bytes32(0)) {
             vm.prank(users.relayer);
-            assetRouter.executeSettleBatch(minterProposalId);
+            settler.executeSettleBatch(minterProposalId);
         }
-    }
-
-    /// @notice Disable fees for cleaner testing
-    function _disableFees() internal {
-        vm.startPrank(users.admin);
-        alphaVault.setManagementFee(0);
-        alphaVault.setPerformanceFee(0);
-        betaVault.setManagementFee(0);
-        betaVault.setPerformanceFee(0);
-        vm.stopPrank();
-
-        vm.prank(users.admin);
-        registry.setHurdleRate(tokens.usdc, 0);
     }
 }

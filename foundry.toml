@@ -3,9 +3,9 @@ src = "src"
 out = "out"
 libs = ["dependencies"]
 gas_reports = ['*']
-solc_version = "0.8.30"
+solc_version = "0.8.34"
 optimizer = true
-optimizer_runs = 100
+optimizer_runs = 2995
 via_ir = true
 ffi = true
 ast = true
@@ -59,6 +59,6 @@ recursive_deps = true
 
 [dependencies]
 forge-std = "1.10.0"
-kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git" }
-minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git" }
-metawallet = { version = "1.0", git = "https://github.com/turingcapitalgroup/metawallet.git" }
+kam = { version = "v1", git = "https://github.com/VerisLabs/KAM.git", rev = "78ea3deb116775665efa1efdba2054ddca80813f" }
+minimal-smart-account = { version = "1.0", git = "https://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@github.com/turingcapitalgroup/minimal-smart-account.git", rev = "0fd060740a7d929b56cff6f73350a19179612ac4" }
+metawallet = { version = "1.0", git = "https://github.com/turingcapitalgroup/metawallet.git", rev = "bf5a00f96da070883aa8d924db55f460db843c11" }
