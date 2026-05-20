@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { kSettler } from "../src/kSettler.sol";
 import { DeploymentManager } from "./utils/DeploymentManager.sol";
@@ -40,7 +40,7 @@ contract GrantRelayerRoleScript is DeploymentManager {
         vm.stopBroadcast();
 
         // 5. Log result
-        console.log("  Granted RELAYER_ROLE to:", _newRelayer);
+        console.log("  Granted SETTLER_RELAYER_ROLE to:", _newRelayer);
         logExecutionEnd();
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 // kSettler Error Constants
 // Centralized error string constants for the kSettler protocol.
@@ -14,6 +14,10 @@ pragma solidity 0.8.30;
 //   KS8 - Proposal not executed
 //   KS9 - Invalid target type
 //   KS10 - Missing MetaWallet approval from kMinterAdapter to vaultAdapter
+//   KS11 - Proposal already finalised
+//   KS12 - Metawallet asset does not match _asset argument
+//   KS13 - Proposal still pending in router (not yet cancelled or executed)
+//   KS14 - Depeg loss exceeds DN adapter MetaWallet position
 
 string constant KSETTLER_BATCH_ALREADY_CLOSED = "KS1";
 string constant KSETTLER_BATCH_ALREADY_SETTLED = "KS2";
@@ -25,3 +29,7 @@ string constant KSETTLER_INVALID_VAULT_TYPE = "KS7";
 string constant KSETTLER_PROPOSAL_NOT_EXECUTED = "KS8";
 string constant KSETTLER_INVALID_TARGET_TYPE = "KS9";
 string constant KSETTLER_MISSING_ALLOWANCE = "KS10";
+string constant KSETTLER_PROPOSAL_ALREADY_FINALISED = "KS11";
+string constant KSETTLER_ASSET_MISMATCH = "KS12";
+string constant KSETTLER_PROPOSAL_STILL_PENDING = "KS13";
+string constant KSETTLER_DEPEG_LOSS_EXCEEDS_DN_POSITION = "KS14";

@@ -2,9 +2,9 @@
 
 ## Introduction
 
-The kSettler contract moves backend settlement math on-chain, making vault batch settlement deterministic, auditable, and trustless. Previously, settlement calculations (netting, fee computation, profit distribution) lived in off-chain services. The kSettler replaces that with verifiable Solidity logic.
+The kSettler contract moves backend settlement math on-chain, making vault batch settlement deterministic, auditable, and trustless. Previously, settlement calculations (netting, profit distribution) lived in off-chain services. The kSettler replaces that with verifiable Solidity logic.
 
-Within the KAM ecosystem, the kSettler sits between the vaults (kMinter, DN vaults, Alpha/Beta vaults) and the `kAssetRouter`. It orchestrates batch closing, calculates net deposit/redemption flows, distributes profit according to a fixed priority, computes management and performance fees, and proposes settlements for execution through the router.
+Within the KAM ecosystem, the kSettler sits between the vaults (kMinter, DN vaults, Alpha/Beta vaults) and the `kAssetRouter`. It orchestrates batch closing, calculates net deposit/redemption flows, distributes profit according to a fixed priority, and proposes settlements for execution through the router.
 
 The contract is non-upgradeable. All transactions sent to the kSettler are triggered on-chain by a ForDefi MPC wallet acting as the relayer, which drives the settlement lifecycle by calling the kSettler's public functions in sequence.
 
@@ -14,25 +14,17 @@ The contract is non-upgradeable. All transactions sent to the kSettler are trigg
 
 ### `src/kSettler.sol`
 Core orchestration contract. Inherits `OptimizedOwnableRoles` (Solady) for gas-efficient role management. Contains all settlement logic:
-- **kMinter batch**: `closeAndProposeMinterBatch` closes the kMinter batch, calculates netting (deposited - requested), rebalances with the MetaWallet (deposit or requestRedeem+redeem), and proposes settlement.
-- **DN vault batch**: `_closeAndProposeDNVaultBatch` closes the DN vault batch, computes depeg (profit/loss), distributes profit (insurance -> treasury -> vault adapter), calculates fees, executes netting transfers between adapters, and proposes settlement.
-- **Execution helpers**: `executeSettleBatch`, `acceptProposal`, `cancelProposal` for proposal lifecycle.
+- **kMinter batch**: `closeAndProposeMinterBatch` closes the kMinter batch, calculates netting (deposited - requested), and proposes settlement. Netting transfers are deferred to `executeSettleBatch`.
+- **DN vault batch**: `_closeAndProposeDNVaultBatch` closes the DN vault batch, computes depeg (profit/loss), distributes profit inline (insurance -> treasury -> vault adapter), and proposes settlement. Netting transfers are deferred to `executeSettleBatch`.
+- **Execution helpers**: `executeSettleBatch` reads the proposal from the router and executes deferred netting transfers (minter deposit/withdraw, DN vault share transfer) before calling `kAssetRouter.executeSettleBatch`. `acceptProposal`, `cancelProposal` for proposal lifecycle.
 - **Alpha/Beta**: `finaliseCustodialSettlement` handles post-settlement fund movement to/from CEFFU custody.
 - **Insurance**: `liquidateInsurance` redeems insurance's MetaWallet shares to underlying assets.
-- **Fees**: `_fees` / `_calculateFees` compute management and performance fees, `_executeFeeTransfer` sends fee shares to treasury.
 - **Profit distribution**: `_distributeProfitShares` implements the insurance -> treasury -> vault adapter priority.
 
 ### `src/interfaces/IkSettler.sol`
 Public interface defining all external functions, events, and structs. Error constants are centralized in `src/errors/Errors.sol` using the `KS*` prefix pattern.
 - **Events**: `ProfitDistributed(insuranceShares, treasuryShares, vaultAdapterShares)`, `InsuranceLiquidated(asset, shares, assets)`
 - **Structs**: `BatchInfo` (batch state), `VaultAddresses` (address bundle), `AssetData` (settlement calculations)
-
-### `src/libraries/VaultMathLibrary.sol`
-Pure math library for fee calculations using Solady's `OptimizedFixedPointMathLib`:
-- **Management fee**: `(totalAssets * duration * managementFeeBps) / (SECS_PER_YEAR * MAX_BPS)` -- time-prorated per second
-- **Performance fee**: Only charged when `assetsDelta > 0` (profit exists) and `totalReturn > hurdleReturn`. Supports hard hurdle (fees on excess only) and soft hurdle (fees on total return if above hurdle). Uses `sharePriceWatermark` to prevent fee reset gaming.
-
-> **Note**: In the Solidity code, the MetaWallet is referenced via the variable `_metawallet` typed as `IERC4626`.
 
 ### `src/libraries/ExecutionDataLibrary.sol`
 Pure library generating `Execution[]` calldata for `MinimalSmartAccount.execute()`:
@@ -70,8 +62,7 @@ The settlement lifecycle is a multi-step process driven by the relayer and backe
           [DN vault batch closed]                                  |
           [depeg calculated (profit/loss)]                         |
           [profit distributed: insurance->treasury->adapter]       |
-          [fees calculated & transferred]                          |
-          [netting transfers between adapters]                     |
+           [netting transfers between adapters]                     |
           [kAssetRouter.proposeSettleBatch() called]               |
           [proposalId returned]                                    |
                   |                                                |
@@ -122,10 +113,10 @@ The settlement lifecycle is a multi-step process driven by the relayer and backe
 ```
 
 **Step 1 -- kMinter Batch** (`closeAndProposeMinterBatch`):
-Closes the kMinter batch and calculates `nettedAmount = deposited - requested`. If negative (more redemptions than deposits), redeems shares from the MetaWallet to cover. If positive, deposits excess assets into the MetaWallet. Returns a `proposalId` (or `bytes32(0)` if netting is zero).
+Closes the kMinter batch. The physical MetaWallet deposit/withdrawal based on `nettedAmount = deposited - requested` is deferred to `executeSettleBatch`, which reads the netted amount from the router proposal. Returns a `proposalId`.
 
 **Step 2 -- DN Vault Batch** (`closeAndProposeDNVaultBatch`):
-Closes the DN vault batch. Calculates depeg: `actualKMinterAssets - expectedKMinterAssets` (positive = profit, negative = loss). On profit: distributes to insurance, treasury, and vault adapter in priority order, then transfers remaining profit shares to the DN adapter. On loss: transfers shares from the DN adapter to the kMinter adapter to cover the deficit. Calculates management and performance fees, transfers fee shares from DN adapter to treasury. Finally, executes netting transfers between kMinter and DN adapters and calls `kAssetRouter.proposeSettleBatch()`.
+Closes the DN vault batch. Calculates depeg: `actualKMinterAssets - expectedKMinterAssets` (positive = profit, negative = loss). On profit: distributes to insurance, treasury, and vault adapter in priority order **inline**. On loss: transfers shares from the vault adapter to the kMinter adapter **inline**. The netting transfer between adapters is deferred to `executeSettleBatch`. Calls `kAssetRouter.proposeSettleBatch()`.
 
 During `proposeSettleBatch`, the router calculates `yield = totalAssets - lastTotalAssets` and checks it against the `maxAllowedDelta` threshold (default 10%). If `abs(yield) > lastTotalAssets * maxAllowedDelta / 10_000`, the proposal is flagged with `requiresApproval = true` and a `YieldExceedsMaxDeltaWarning` event is emitted. This acts as a circuit breaker for anomalous yield values that could indicate calculation errors or manipulation.
 
@@ -138,7 +129,7 @@ When yield breaks the delta threshold in either direction, the backend sends an 
 If yield is within the delta threshold, no approval step is needed -- the proposal can be executed directly after the cooldown period.
 
 **Step 4 -- Execute Settlement** (`executeSettleBatch`):
-A cronjob queries `kAssetRouter.getPendingProposals(vault)` for pending proposal IDs, checks `canExecuteProposal(proposalId)` (verifies cooldown has passed and approval status), and if ready, calls `settler.executeSettleBatch(proposalId)`. This finalizes the batch in the router: mints/burns kTokens to distribute yield or socialize losses, updates adapter `totalAssets`, notifies the vault of fee timestamps, and marks the batch as settled.
+A cronjob queries `kAssetRouter.getPendingProposals(vault)` for pending proposal IDs, checks `canExecuteProposal(proposalId)` (verifies cooldown has passed and approval status), and if ready, calls `settler.executeSettleBatch(proposalId)`. This reads the proposal from the router to determine the vault type and executes the deferred netting transfers (minter deposit/withdraw or DN vault share transfer). Then it calls `kAssetRouter.executeSettleBatch` which finalizes the batch: mints/burns kTokens to distribute yield or socialize losses, updates adapter `totalAssets`, and marks the batch as settled.
 
 **Step 5 -- Custodial Finalization** (`finaliseCustodialSettlement`, Alpha/Beta only):
 For custodial vaults (Alpha/Beta), redeems the netted shares from the MetaWallet via the kMinter adapter and transfers the underlying assets to the custodial target (CEFFU). If netting is negative, deposits assets into the MetaWallet instead.
@@ -206,21 +197,28 @@ Insurance and treasury addresses and basis points are read from the registry via
 
 ---
 
-## Fee Model
+## Role Management
 
-Fees are calculated in `VaultMathLibrary` and charged during DN vault batch settlement (`_fees` in `kSettler.sol`).
+The kSettler uses Solady's `OptimizedOwnableRoles` for role-based access control. Each role's revoke authority mirrors its grant authority (TOB-KAM-32 finding #3), so revocation is at least as strong as the original grant.
 
-**Management Fee**: Time-based, prorated per second. Formula:
+| Role | Granted by | Revoked by |
+|------|------------|------------|
+| OWNER | constructor (`_initializeOwner`) | Solady-inherited `transferOwnership` / `renounceOwnership` |
+| ADMIN | constructor + `grantAdminRole` (OWNER-gated) | `revokeAdminRole` (OWNER-gated) |
+| RELAYER | constructor + `grantRelayerRole` (ADMIN-gated) | `revokeRelayerRole` (ADMIN-gated) |
+
+### Function surface
+
+```solidity
+// OWNER-gated
+function grantAdminRole(address _admin) external;
+function revokeAdminRole(address _admin) external;
+
+// ADMIN-gated
+function grantRelayerRole(address _relayer) external payable;
+function revokeRelayerRole(address _relayer) external payable;
 ```
-managementFee = (totalAssets * durationSecs * managementFeeBps) / (SECS_PER_YEAR * 10_000)
-```
-Charged on total vault assets regardless of performance. Only applied when `block.timestamp > nextManagementFeeTimestamp`.
 
-**Performance Fee**: Only charged when there is profit (`assetsDelta > 0`) and the total return exceeds the hurdle return. Two modes:
-- **Hard hurdle**: Fees charged only on the excess return above the hurdle (`excessReturn * performanceFeeBps / 10_000`)
-- **Soft hurdle**: If return exceeds hurdle, fees charged on the entire return (`totalReturn * performanceFeeBps / 10_000`)
+`grantAdminRole` and `grantRelayerRole` revert with `KS3` (zero-address) if the recipient is `address(0)`. The corresponding revoke functions are no-ops if the address does not currently hold the role (Solady semantics).
 
-Uses `sharePriceWatermark` to track the high-water mark -- prevents charging performance fees on recovery from a drawdown (no fee until a new all-time high share price is reached).
-
-**Fee transfer**: Fee shares are calculated as vault shares (not MetaWallet shares). They are transferred as MetaWallet shares from the DN vault adapter to the treasury address.
-
+Solady's inherited `grantRoles(addr, mask)` and `revokeRoles(addr, mask)` (both `onlyOwner`) remain accessible as an emergency escape hatch — same convention as the kRegistry contract in the wider KAM repo.

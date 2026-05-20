@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { IERC20 } from "forge-std/interfaces/IERC20.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
@@ -95,77 +95,95 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         vm.startPrank(users.admin);
 
         // ---- A. ADD real MetaWallet selectors ----
+        IExecutionGuardian.TargetType metawalletTarget = IExecutionGuardian.TargetType.METAWALLET;
+        IExecutionGuardian.TargetType assetTarget = IExecutionGuardian.TargetType.ASSET;
 
         // kMinterAdapter – ERC4626 operations
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, approveSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, transferFromSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, depSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), real, 0, withdrawSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, metawalletTarget, approveSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, metawalletTarget, transferSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, metawalletTarget, transferFromSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, metawalletTarget, depSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), real, metawalletTarget, withdrawSel, true);
 
         // DNVaultAdapter
-        g.setAllowedSelector(address(DNVaultAdapterUSDC), real, 0, approveSel, true);
-        g.setAllowedSelector(address(DNVaultAdapterUSDC), real, 0, transferSel, true);
-        g.setAllowedSelector(address(DNVaultAdapterUSDC), real, 0, transferFromSel, true);
+        g.setAllowedSelector(address(DNVaultAdapterUSDC), real, metawalletTarget, approveSel, true);
+        g.setAllowedSelector(address(DNVaultAdapterUSDC), real, metawalletTarget, transferSel, true);
+        g.setAllowedSelector(address(DNVaultAdapterUSDC), real, metawalletTarget, transferFromSel, true);
 
         // ALPHAVaultAdapter
-        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), real, 0, approveSel, true);
-        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), real, 0, transferSel, true);
-        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), real, 0, transferFromSel, true);
+        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), real, metawalletTarget, approveSel, true);
+        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), real, metawalletTarget, transferSel, true);
+        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), real, metawalletTarget, transferFromSel, true);
 
         // BETHAVaultAdapter
-        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), real, 0, approveSel, true);
-        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), real, 0, transferSel, true);
-        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), real, 0, transferFromSel, true);
+        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), real, metawalletTarget, approveSel, true);
+        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), real, metawalletTarget, transferSel, true);
+        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), real, metawalletTarget, transferFromSel, true);
 
         // ---- B. REMOVE mock selectors ----
 
         // kMinterAdapter mock – remove ALL selectors (ERC20 + ERC4626)
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, approveSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, transferFromSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, depSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), mock, 0, mockRedeemSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, metawalletTarget, approveSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, metawalletTarget, transferSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, metawalletTarget, transferFromSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, metawalletTarget, depSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), mock, metawalletTarget, mockRedeemSel, false);
         // Legacy selectors added by the original deployment for kMinterAdapter
         g.setAllowedSelector(
-            address(minterAdapterUSDC), mock, 0, bytes4(keccak256("requestDeposit(uint256,address,address)")), false
+            address(minterAdapterUSDC),
+            mock,
+            metawalletTarget,
+            bytes4(keccak256("requestDeposit(uint256,address,address)")),
+            false
         );
         g.setAllowedSelector(
-            address(minterAdapterUSDC), mock, 0, bytes4(keccak256("deposit(uint256,address,address)")), false
+            address(minterAdapterUSDC),
+            mock,
+            metawalletTarget,
+            bytes4(keccak256("deposit(uint256,address,address)")),
+            false
         );
         g.setAllowedSelector(
-            address(minterAdapterUSDC), mock, 0, bytes4(keccak256("requestRedeem(uint256,address,address)")), false
+            address(minterAdapterUSDC),
+            mock,
+            metawalletTarget,
+            bytes4(keccak256("requestRedeem(uint256,address,address)")),
+            false
         );
         g.setAllowedSelector(
-            address(minterAdapterUSDC), mock, 0, bytes4(keccak256("withdraw(uint256,address,address)")), false
+            address(minterAdapterUSDC),
+            mock,
+            metawalletTarget,
+            bytes4(keccak256("withdraw(uint256,address,address)")),
+            false
         );
 
         // DNVaultAdapter mock
-        g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, 0, approveSel, false);
-        g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, 0, transferSel, false);
-        g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, 0, transferFromSel, false);
+        g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, metawalletTarget, approveSel, false);
+        g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, metawalletTarget, transferSel, false);
+        g.setAllowedSelector(address(DNVaultAdapterUSDC), mock, metawalletTarget, transferFromSel, false);
 
         // ALPHAVaultAdapter mock
-        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), mock, 0, approveSel, false);
-        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), mock, 0, transferSel, false);
-        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), mock, 0, transferFromSel, false);
+        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), mock, metawalletTarget, approveSel, false);
+        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), mock, metawalletTarget, transferSel, false);
+        g.setAllowedSelector(address(ALPHAVaultAdapterUSDC), mock, metawalletTarget, transferFromSel, false);
 
         // BETHAVaultAdapter mock
-        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), mock, 0, approveSel, false);
-        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), mock, 0, transferSel, false);
-        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), mock, 0, transferFromSel, false);
+        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), mock, metawalletTarget, approveSel, false);
+        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), mock, metawalletTarget, transferSel, false);
+        g.setAllowedSelector(address(BETHAVaultAdapterUSDC), mock, metawalletTarget, transferFromSel, false);
 
         // ---- C. Fix kMinterAdapter target ordering ----
         // Solady's OptimizedAddressEnumerableSetLib uses left-shift on removal,
         // so after removing mock from [mock, USDC, real] we get [USDC, real].
         // Remove and re-add USDC so the final order is [real, USDC].
-        // _getTarget(adapter, 0) returns the first type-0 target, which must be the MetaWallet.
-        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, 0, transferSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, 0, approveSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, 0, transferFromSel, false);
-        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, 0, transferSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, 0, approveSel, true);
-        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, 0, transferFromSel, true);
+        // _getTarget(adapter, METAWALLET) returns the first MetaWallet target.
+        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, assetTarget, transferSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, assetTarget, approveSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, assetTarget, transferFromSel, false);
+        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, assetTarget, transferSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, assetTarget, approveSel, true);
+        g.setAllowedSelector(address(minterAdapterUSDC), tokens.usdc, assetTarget, transferFromSel, true);
 
         // Restore USDC execution validators (deleted during removal above)
         g.setExecutionValidator(address(minterAdapterUSDC), tokens.usdc, transferSel, validator);
@@ -215,6 +233,9 @@ abstract contract DeployMetaWallet is DeploymentBaseTest {
         pc.setAllowedReceiver(real, address(ALPHAVaultAdapterUSDC), true);
         pc.setAllowedReceiver(real, address(BETHAVaultAdapterUSDC), true);
         pc.setAllowedReceiver(real, address(wallet), true);
+        (address _treasury, address _insurance,,) = registry.getSettlementConfig();
+        pc.setAllowedReceiver(real, _treasury, true);
+        pc.setAllowedReceiver(real, _insurance, true);
 
         // Sources (for transferFrom)
         pc.setAllowedSource(real, address(minterAdapterUSDC), true);

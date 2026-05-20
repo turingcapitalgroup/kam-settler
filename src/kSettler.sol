@@ -1,44 +1,45 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 // External Libraries
 import { OptimizedOwnableRoles } from "kam/src/vendor/solady/auth/OptimizedOwnableRoles.sol";
+import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
 import { OptimizedReentrancyGuardTransient } from "kam/src/vendor/solady/utils/OptimizedReentrancyGuardTransient.sol";
+import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
+import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Internal Libraries
 import { ExecutionDataLibrary } from "./libraries/ExecutionDataLibrary.sol";
-import { VaultMathLib } from "kam/src/libraries/VaultMathLib.sol";
-import { OptimizedFixedPointMathLib } from "kam/src/vendor/solady/utils/OptimizedFixedPointMathLib.sol";
-import { Execution, ExecutionLib } from "minimal-smart-account/libraries/ExecutionLib.sol";
-import { ModeCode, ModeLib } from "minimal-smart-account/libraries/ModeLib.sol";
 
 // Local Interfaces
 import { IRegistry } from "./interfaces/IRegistry.sol";
 import { IVaultAdapter, IkAssetRouter, IkMinter, IkSettler, IkStakingVault, IkToken } from "./interfaces/IkSettler.sol";
+import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
+import { IExecutionGuardian } from "kam/src/interfaces/modules/IExecutionGuardian.sol";
+import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
+import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
+import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 // Errors
 import {
     KSETTLER_ADDRESS_ZERO,
+    KSETTLER_ASSET_MISMATCH,
     KSETTLER_BATCH_ALREADY_CLOSED,
     KSETTLER_BATCH_ALREADY_SETTLED,
     KSETTLER_INSUFFICIENT_BALANCE,
     KSETTLER_INVALID_TARGET_TYPE,
     KSETTLER_INVALID_VAULT_TYPE,
     KSETTLER_MISSING_ALLOWANCE,
+    KSETTLER_PROPOSAL_ALREADY_FINALISED,
     KSETTLER_PROPOSAL_NOT_EXECUTED
 } from "./errors/Errors.sol";
-import { IRegistry as IRegistryBase } from "kam/src/interfaces/IRegistry.sol";
-import { IERC4626 } from "metawallet/src/interfaces/IERC4626.sol";
-import { IVaultModule } from "metawallet/src/interfaces/IVaultModule.sol";
-import { IMinimalSmartAccount } from "minimal-smart-account/interfaces/IMinimalSmartAccount.sol";
 
 /// @title kSettler
-/// @notice Contract responsible for settling batch operations in delta-neutral vaults
-/// @dev This contract handles the complex settlement process for delta-neutral vault batches,
-///      including rebalancing, fee calculations, and asset netting operations.
-///      It manages the interaction between kMinter, vault adapters, and meta-wallets.
+/// @notice Settlement entrypoint for kMinter, DN, and custodial vault batches.
+/// @dev Closes batches on the kMinter / staking vault, proposes settlement to the kAssetRouter,
+///      and at execute time performs the deferred MetaWallet share movements (depeg distribution
+///      and netting) immediately before the router updates adapter accounting.
 contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardTransient {
-    using VaultMathLib for IkStakingVault;
     using OptimizedFixedPointMathLib for int256;
     using ExecutionLib for bytes;
 
@@ -55,6 +56,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @notice The registry contract for address resolution
     IRegistry public registry;
 
+    /// @notice Tracks whether a proposal has already been finalised via finaliseCustodialSettlement
+    mapping(bytes32 => bool) public finalisedProposals;
+
     /*//////////////////////////////////////////////////////////////
                               ROLES
     //////////////////////////////////////////////////////////////*/
@@ -62,8 +66,9 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @notice Admin role for authorized operations
     uint256 internal constant ADMIN_ROLE = _ROLE_0;
 
-    /// @notice Emergency admin role for emergency operations
-    uint256 internal constant RELAYER_ROLE = _ROLE_1;
+    /// @notice Relayer role for settlement automation
+    /// @dev Named SETTLER_RELAYER_ROLE to disambiguate from KAM's RELAYER_ROLE (_ROLE_3).
+    uint256 internal constant SETTLER_RELAYER_ROLE = _ROLE_1;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -97,7 +102,7 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
 
         _initializeOwner(_owner);
         _grantRoles(_admin, ADMIN_ROLE);
-        _grantRoles(_relayer, RELAYER_ROLE);
+        _grantRoles(_relayer, SETTLER_RELAYER_ROLE);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -105,9 +110,29 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkSettler
+    function grantAdminRole(address _admin) external {
+        _checkOwner();
+        require(_admin != address(0), KSETTLER_ADDRESS_ZERO);
+        _grantRoles(_admin, ADMIN_ROLE);
+    }
+
+    /// @inheritdoc IkSettler
+    function revokeAdminRole(address _admin) external {
+        _checkOwner();
+        _removeRoles(_admin, ADMIN_ROLE);
+    }
+
+    /// @inheritdoc IkSettler
     function grantRelayerRole(address _relayer) external payable {
         _checkRoles(ADMIN_ROLE);
-        _grantRoles(_relayer, RELAYER_ROLE);
+        require(_relayer != address(0), KSETTLER_ADDRESS_ZERO);
+        _grantRoles(_relayer, SETTLER_RELAYER_ROLE);
+    }
+
+    /// @inheritdoc IkSettler
+    function revokeRelayerRole(address _relayer) external payable {
+        _checkRoles(ADMIN_ROLE);
+        _removeRoles(_relayer, SETTLER_RELAYER_ROLE);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -115,46 +140,23 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkSettler
+    /// @dev kSettler holds no per-proposal state for minter settlements: the deferred MetaWallet
+    ///      movement at execute time is fully derivable from the router proposal + registry.
     function closeAndProposeMinterBatch(address _asset) external payable returns (bytes32 _proposalId) {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
-        // Retrieve current batch information
         bytes32 _batchId = kMinter.getBatchId(_asset);
         IkMinter.BatchInfo memory _batchInfo = kMinter.getBatchInfo(_batchId);
-
-        // Validate batch state
         require(!_batchInfo.isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
         require(!_batchInfo.isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
 
-        // Close the batch in the kMinter
-        kMinter.closeBatch(_batchInfo.batchId, true);
+        kMinter.closeBatch(_batchId, true);
 
-        // Get adapter and metawallet target
-        IMinimalSmartAccount _adapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
-        address _target = _getTarget(address(_adapter), 0);
+        address _adapter = registry.getAdapter(address(kMinter), _asset);
+        _proposalId =
+            kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, IVaultAdapter(_adapter).totalAssets());
 
-        // Get batch balances and calculate netted assets
-        (uint256 _deposited, uint256 _requested) = kAssetRouter.getBatchIdBalances(address(kMinter), _batchInfo.batchId);
-        int256 _nettedAmount = int256(_deposited) - int256(_requested);
-
-        uint256 _adapterAssets = IVaultAdapter(address(_adapter)).totalAssets();
-
-        if (_nettedAmount < 0) {
-            uint256 _abs = _nettedAmount.abs();
-
-            // Money should always be idle if not revert and divest 1st.
-            Execution[] memory _executions =
-                ExecutionDataLibrary.getWithdrawExecutionData(_target, address(_adapter), address(_adapter), _abs);
-
-            _executeAdapterCall(_adapter, _executions);
-        } else if (_nettedAmount > 0) {
-            Execution[] memory _execution =
-                ExecutionDataLibrary.getDepositExecutionData(_target, address(_adapter), uint256(_nettedAmount));
-
-            _executeAdapterCall(_adapter, _execution);
-        }
-        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(kMinter), _batchId, _adapterAssets, 0, 0);
         _unlockReentrant();
     }
 
@@ -177,11 +179,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         _unlockReentrant();
     }
 
-    /// @notice Internal implementation for closing and proposing DN vault batch
+    /// @notice Internal implementation for closing and proposing a DN vault batch
     /// @param _asset The asset address for which to close the batch
     /// @param _newMetaWalletTotalAssets The new total assets for the MetaWallet (idle + strategies)
     /// @param _rootHash The merkle root committing to the strategy breakdown
-    /// @return _proposalId The proposal ID for the settlement
     function _closeAndProposeDNVaultBatch(
         address _asset,
         uint256 _newMetaWalletTotalAssets,
@@ -190,101 +191,37 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         internal
         returns (bytes32 _proposalId)
     {
-        // Ensure only authorized relayers can call this function
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
-        // Get all required addresses for the asset
         IMinimalSmartAccount _kMinterAdapter = IMinimalSmartAccount(registry.getAdapter(address(kMinter), _asset));
         IkStakingVault _vault =
             IkStakingVault(registry.getVaultByAssetAndType(_asset, uint8(IRegistryBase.VaultType.DN)));
         IMinimalSmartAccount _vaultAdapter = IMinimalSmartAccount(registry.getAdapter(address(_vault), _asset));
-        address _target = _getTarget(address(_vaultAdapter), 0);
-        IERC4626 _metawallet = IERC4626(_target);
+        IERC4626 _metawallet = IERC4626(_getTarget(address(_vaultAdapter), IExecutionGuardian.TargetType.METAWALLET));
 
-        // Verify kMinterAdapter has approved vaultAdapter to transferFrom MetaWallet shares.
-        // This approval is an external deployment invariant that must be set by a MANAGER.
-        // NOTE: The actual allowance sufficiency is checked before each transferFrom call below.
-
-        // Compute depeg as the rate delta from settleTotalAssets on the kMinter's MetaWallet position.
-        // Capture value BEFORE settlement, then compare AFTER. The delta isolates pure yield/loss
-        // from any prior minter deposits/withdrawals, ensuring correct depeg regardless of ordering.
-        // Proof: remaining_value = shares × old_rate = totalAssets + pending_deposit, always.
+        // Compute depeg as the rate delta on the kMinter MetaWallet position around settleTotalAssets.
+        // Snapshotting before/after isolates pure yield/loss from any prior minter activity.
         uint256 _valueBefore = _metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)));
-        IVaultModule(_target).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
+        IVaultModule(address(_metawallet)).settleTotalAssets(_newMetaWalletTotalAssets, _rootHash);
         int256 _depeg =
             int256(_metawallet.convertToAssets(_metawallet.balanceOf(address(_kMinterAdapter)))) - int256(_valueBefore);
 
-        // Retrieve current batch information
-        BatchInfo memory _batchInfo = _getBatchInfo(_vault);
+        (bytes32 _batchId,, bool _isClosed, bool _isSettled) = _vault.getCurrentBatchInfo();
+        require(!_isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
+        require(!_isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
+        _vault.closeBatch(_batchId, true);
 
-        // Validate batch state
-        require(!_batchInfo._isClosed, KSETTLER_BATCH_ALREADY_CLOSED);
-        require(!_batchInfo._isSettled, KSETTLER_BATCH_ALREADY_SETTLED);
+        bool _hasSupply = _vault.totalSupply() != 0;
 
-        // Close the batch in the vault
-        _vault.closeBatch(_batchInfo._batchId, true);
+        _handleDepeg(_depeg, _asset, _hasSupply, _metawallet, _kMinterAdapter, _vaultAdapter);
 
-        // Do not send profit when total supply is zero, to avoid shares inflation
-        if (_vault.totalSupply() != 0) {
-            if (_depeg > 0) {
-                // PROFIT: positive depeg means kMinter has more assets than expected (surplus)
-                // Distribute profit: insurance -> treasury -> vault adapter
-                uint256 _profitAssets = uint256(_depeg);
-                uint256 _sharesToVaultAdapter = _distributeProfitShares(
-                    _metawallet,
-                    _kMinterAdapter,
-                    _profitAssets,
-                    true, // isVaultSettlement
-                    _asset
-                );
-
-                // Transfer remaining shares to vault adapter if any
-                if (_sharesToVaultAdapter > 0) {
-                    require(
-                        _metawallet.allowance(address(_kMinterAdapter), address(_vaultAdapter))
-                            >= _sharesToVaultAdapter,
-                        KSETTLER_MISSING_ALLOWANCE
-                    );
-                    _executeRebalanceTransfer(
-                        false, // toKMinterAdapter = false means transfer FROM kMinter TO vaultAdapter
-                        _metawallet,
-                        _kMinterAdapter,
-                        _vaultAdapter,
-                        _sharesToVaultAdapter
-                    );
-                }
-            } else if (_depeg < 0) {
-                // LOSS: negative depeg means kMinter needs more assets (deficit)
-                // Transfer from DN adapter to kMinter adapter (existing behavior)
-                uint256 _shareValue = _metawallet.convertToShares(uint256(-_depeg));
-                while (_metawallet.convertToAssets(_shareValue) < uint256(-_depeg)) {
-                    _shareValue += 1;
-                }
-                _executeRebalanceTransfer(true, _metawallet, _kMinterAdapter, _vaultAdapter, _shareValue);
-            }
+        // DN adapter totalAssets to propose: current MetaWallet position after inline depeg transfers.
+        uint256 _newTotalAssets;
+        {
+            _newTotalAssets = _metawallet.convertToAssets(_metawallet.balanceOf(address(_vaultAdapter)));
         }
 
-        // Calculate and process fees (skip when no shareholders exist to absorb the cost)
-        uint64 _lastFeesChargedDateManagement;
-        uint64 _lastFeesChargedDatePerformance;
-        if (_vault.totalSupply() != 0) {
-            (_lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-                _fees(_vault, _vaultAdapter, _metawallet);
-        }
-
-        // Calculate final asset data for settlement
-        AssetData memory _assetData =
-            _calculateAssetData(_metawallet, _kMinterAdapter, _vaultAdapter, _vault, _batchInfo);
-
-        // Propose the batch settlement to the asset router
-        _proposalId = kAssetRouter.proposeSettleBatch(
-            _asset,
-            address(_vault),
-            _batchInfo._batchId,
-            _assetData._newTotalAssets,
-            _lastFeesChargedDateManagement,
-            _lastFeesChargedDatePerformance
-        );
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, address(_vault), _batchId, _newTotalAssets);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -294,51 +231,76 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function executeSettleBatch(bytes32 _proposalId) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
+
+        IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
+        uint8 _vaultType = registry.getVaultType(_proposal.vault);
+
+        if (_vaultType == uint8(IRegistryBase.VaultType.MINTER)) {
+            _executeMinterSettlement(_proposal);
+        } else if (_vaultType == uint8(IRegistryBase.VaultType.DN)) {
+            _executeDNVaultNetting(_proposal);
+        }
 
         kAssetRouter.executeSettleBatch(_proposalId);
+
         _unlockReentrant();
     }
 
-    /// @inheritdoc IkSettler
-    function liquidateInsurance(address _asset) external payable {
-        _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+    /// @notice Runs the MetaWallet deposit/withdraw for a kMinter settlement.
+    /// @dev `proposal.netted` is in asset units (kToken == asset). Positive = deposit into MetaWallet,
+    ///      negative = withdraw out of MetaWallet, both via the kMinter adapter.
+    function _executeMinterSettlement(IkAssetRouter.VaultSettlementProposal memory _proposal) internal {
+        int256 _netted = _proposal.netted;
+        if (_netted == 0) return;
 
-        // Get insurance address from registry
+        address _adapter = registry.getAdapter(address(kMinter), _proposal.asset);
+        address _metawallet = _getTarget(_adapter, IExecutionGuardian.TargetType.METAWALLET);
+
+        Execution[] memory _executions = _netted < 0
+            ? ExecutionDataLibrary.getWithdrawExecutionData(_metawallet, _adapter, _adapter, uint256(-_netted))
+            : ExecutionDataLibrary.getDepositExecutionData(_metawallet, _adapter, uint256(_netted));
+        _executeAdapterCall(IMinimalSmartAccount(_adapter), _executions);
+    }
+
+    /// @notice Runs the deferred netting share transfer for a DN vault settlement.
+    /// @dev Reads `proposal.netted` from the router, converts to MetaWallet shares, and transfers
+    ///      between the kMinter and DN vault adapters.
+    function _executeDNVaultNetting(IkAssetRouter.VaultSettlementProposal memory _proposal) internal {
+        if (_proposal.netted == 0) return;
+
+        address _vaultAdapter = _proposal.adapter;
+        address _kMinterAdapter = registry.getAdapter(address(kMinter), _proposal.asset);
+        address _metawallet = _getTarget(_vaultAdapter, IExecutionGuardian.TargetType.METAWALLET);
+
+        uint256 _nettedShares = IERC4626(_metawallet)
+            .convertToShares(_proposal.netted < 0 ? uint256(-_proposal.netted) : uint256(_proposal.netted));
+
+        _executeNettedTransfer(_proposal.netted > 0, _metawallet, _kMinterAdapter, _vaultAdapter, _nettedShares);
+    }
+
+    /// @inheritdoc IkSettler
+    function liquidateInsurance(address _asset, address _metawallet) external payable {
+        _lockReentrant();
+        _checkRoles(SETTLER_RELAYER_ROLE);
+
+        require(_metawallet != address(0), KSETTLER_ADDRESS_ZERO);
+        require(IERC4626(_metawallet).asset() == _asset, KSETTLER_ASSET_MISMATCH);
+
         (, address _insurance,,) = registry.getSettlementConfig();
         require(_insurance != address(0), KSETTLER_ADDRESS_ZERO);
 
-        // Get the metawallet target for the insurance account
-        address[] memory _targets = registry.getExecutorTargets(_insurance);
-        require(_targets.length != 0, KSETTLER_ADDRESS_ZERO);
-
-        // Find the metawallet target (type METAWALLET = 0)
-        address _metawalletAddr;
-        for (uint256 i = 0; i < _targets.length; i++) {
-            if (registry.getTargetType(_targets[i]) == 0) {
-                _metawalletAddr = _targets[i];
-                break;
-            }
-        }
-        require(_metawalletAddr != address(0), KSETTLER_ADDRESS_ZERO);
-
-        IERC4626 _metawallet = IERC4626(_metawalletAddr);
-
-        // Get insurance's share balance
-        uint256 _shares = _metawallet.balanceOf(_insurance);
+        IERC4626 _metawalletContract = IERC4626(_metawallet);
+        uint256 _shares = _metawalletContract.balanceOf(_insurance);
         if (_shares == 0) {
             _unlockReentrant();
             return;
         }
 
-        uint256 _assetsValue = _metawallet.convertToAssets(_shares);
+        uint256 _assetsValue = _metawalletContract.convertToAssets(_shares);
 
-        // Build execution for redeem
         Execution[] memory _executions =
-            ExecutionDataLibrary.getWithdrawExecutionData(_metawalletAddr, _insurance, _insurance, _assetsValue);
-
-        // Execute through insurance smart account
+            ExecutionDataLibrary.getWithdrawExecutionData(_metawallet, _insurance, _insurance, _assetsValue);
         _executeAdapterCall(IMinimalSmartAccount(_insurance), _executions);
 
         emit InsuranceLiquidated(_asset, _shares, _assetsValue);
@@ -350,16 +312,14 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         address _asset,
         address _vault,
         bytes32 _batchId,
-        uint256 _totalAssets,
-        uint64 _lastFeesChargedManagement,
-        uint64 _lastFeesChargedPerformance
+        uint256 _totalAssets
     )
         external
         payable
         returns (bytes32 _proposalId)
     {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         // Only custodial vaults can use the generic proposeSettleBatch.
         // kMinter and DN vaults must settle through their dedicated functions.
@@ -369,16 +329,14 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
             KSETTLER_INVALID_VAULT_TYPE
         );
 
-        _proposalId = kAssetRouter.proposeSettleBatch(
-            _asset, _vault, _batchId, _totalAssets, _lastFeesChargedManagement, _lastFeesChargedPerformance
-        );
+        _proposalId = kAssetRouter.proposeSettleBatch(_asset, _vault, _batchId, _totalAssets);
         _unlockReentrant();
     }
 
     /// @inheritdoc IkSettler
     function closeVaultBatch(address _vault, bytes32 _batchId, bool _create) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
 
         uint8 _vaultType = registry.getVaultType(_vault);
         require(
@@ -397,7 +355,10 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     /// @inheritdoc IkSettler
     function finaliseCustodialSettlement(bytes32 _proposalId) external payable {
         _lockReentrant();
-        _checkRoles(RELAYER_ROLE);
+        _checkRoles(SETTLER_RELAYER_ROLE);
+
+        require(!finalisedProposals[_proposalId], KSETTLER_PROPOSAL_ALREADY_FINALISED);
+        finalisedProposals[_proposalId] = true;
 
         IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
 
@@ -415,40 +376,15 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         IMinimalSmartAccount _vaultAdapter =
             IMinimalSmartAccount(registry.getAdapter(address(_proposal.vault), _proposal.asset));
 
-        address _kMinterAdapterAddr = address(_kMinterAdapter);
-        address _targetMetawallet = _getTarget(_kMinterAdapterAddr, 0);
-        IERC4626 _metawallet = IERC4626(_targetMetawallet);
-        address _targetCustodial = _getTarget(address(_vaultAdapter), 1);
-        int256 _netted = int256(_proposal.netted);
-
-        if (_proposal.netted == 0) {
-            _unlockReentrant();
-            return;
-        }
-        if (_proposal.netted > 0) {
-            uint256 _nettedAbs = uint256(_netted);
-
-            // Execute redemption through the kMinter adapter
-            Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
-                address(_metawallet), _kMinterAdapterAddr, _kMinterAdapterAddr, _nettedAbs
-            );
-
-            // redeem assets from metawallet using kMinter adapter
-            _executeAdapterCall(_kMinterAdapter, _executions);
-
-            require(
-                IkToken(_proposal.asset).balanceOf(_kMinterAdapterAddr) >= _nettedAbs, KSETTLER_INSUFFICIENT_BALANCE
-            );
-
-            // Transfer assets to custodial target (CEFFU)
-            _executions = ExecutionDataLibrary.getTransferExecutionData(_proposal.asset, _targetCustodial, _nettedAbs);
-            _executeAdapterCall(_kMinterAdapter, _executions);
-        } else {
-            Execution[] memory _executions =
-                ExecutionDataLibrary.getDepositExecutionData(_targetMetawallet, _kMinterAdapterAddr, _netted.abs());
-
-            _executeAdapterCall(_kMinterAdapter, _executions);
-        }
+        // Apply netted-based redemption / deposit in an isolated stack frame.
+        // Keeps this function within EVM stack limits (ABI decoder for `VaultSettlementProposal` is heavy).
+        _finaliseCustodialNetted(
+            _proposal.netted,
+            _proposal.asset,
+            _getTarget(address(_kMinterAdapter), IExecutionGuardian.TargetType.METAWALLET),
+            _getTarget(address(_vaultAdapter), IExecutionGuardian.TargetType.CUSTODIAL),
+            _kMinterAdapter
+        );
         _unlockReentrant();
     }
 
@@ -457,127 +393,25 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkSettler
-    function isNettedNegative(bytes32 _proposalId) external view returns (bool _isNettedNegative) {
-        IkAssetRouter.VaultSettlementProposal memory _proposal = kAssetRouter.getSettlementProposal(_proposalId);
-        if (_proposal.netted < 0) return true;
+    function isNettedNegative(bytes32 _proposalId) external view returns (bool) {
+        return kAssetRouter.getSettlementProposal(_proposalId).netted < 0;
     }
 
     /*//////////////////////////////////////////////////////////////
                               INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Executes a batch of operations through the adapter using MinimalSmartAccount interface
-    /// @dev Encodes the execution array and calls the adapter's execute function
-    /// @param _adapter The adapter to execute through
-    /// @param _executions Array of Execution structs to execute
+    /// @notice Encodes and dispatches a batch of executions through a MinimalSmartAccount
     function _executeAdapterCall(IMinimalSmartAccount _adapter, Execution[] memory _executions) internal {
         bytes memory _executionCalldata = ExecutionLib.encodeBatch(_executions);
         ModeCode _mode = ModeLib.encodeSimpleBatch();
         _adapter.execute(_mode, _executionCalldata);
     }
 
-    /// @notice Retrieves current batch information for a vault
-    /// @dev Gets batch state and balances from vault reader and asset router
-    /// @param _vault The vault address to get batch info for
-    /// @return _batchInfo Struct containing batch information
-    function _getBatchInfo(IkStakingVault _vault) internal view returns (BatchInfo memory _batchInfo) {
-        // Get basic batch information from vault reader
-        (_batchInfo._batchId,, _batchInfo._isClosed, _batchInfo._isSettled) = _vault.getCurrentBatchInfo();
-
-        // Get deposited amount for this batch
-        (_batchInfo._deposited,) = kAssetRouter.getBatchIdBalances(address(_vault), _batchInfo._batchId);
-
-        // Get pending shares for this batch
-        _batchInfo._pendingShares = kAssetRouter.getRequestedShares(address(_vault), _batchInfo._batchId);
-    }
-
-    /// @notice Calculates asset data for settlement
-    /// @dev Determines current adapter assets, calculates netted assets, and computes new total
-    /// @param _metawallet the address of the target metawallet
-    /// @param _kMinterAdapter the kMinter adapter address
-    /// @param _vaultAdapter the vault adapter address
-    /// @param _vault the vault address
-    /// @param _batchInfo Struct containing batch information
-    /// @return _assetData Struct containing calculated asset data
-    function _calculateAssetData(
-        IERC4626 _metawallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _vaultAdapter,
-        IkStakingVault _vault,
-        BatchInfo memory _batchInfo
-    )
-        internal
-        returns (AssetData memory _assetData)
-    {
-        // Get current shares and assets in the DN adapter
-        _assetData._dnAdapterShares = _metawallet.balanceOf(address(_vaultAdapter));
-        _assetData._dnAdapterAssets = _metawallet.convertToAssets(_assetData._dnAdapterShares);
-        // Calculate netted assets (difference between deposited and requested)
-        _assetData._nettedAssets = _nettedAssets(
-            _assetData._dnAdapterAssets,
-            _batchInfo._deposited,
-            _batchInfo._pendingShares,
-            _metawallet,
-            _kMinterAdapter,
-            _vaultAdapter,
-            _vault
-        );
-
-        _assetData._newTotalAssets = _assetData._dnAdapterAssets;
-    }
-
-    /// @dev Handles the netting process by transferring assets between adapters based on the difference
-    /// @param _dnAdapterAssets Current assets in the DN adapter
-    /// @param _deposited Total amount deposited in the batch
-    /// @param _pendingShares Number of shares pending redemption
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @return The net amount of assets after netting (can be negative)
-    function _nettedAssets(
-        uint256 _dnAdapterAssets,
-        uint256 _deposited,
-        uint256 _pendingShares,
-        IERC4626 _dnMetaWallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _dnVaultAdapter,
-        IkStakingVault _vault
-    )
-        internal
-        returns (int256)
-    {
-        // Convert pending shares to assets using current adapter totals
-        uint256 _requestedAssets =
-            _vault.convertToAssetsWithTotals(_pendingShares, _dnAdapterAssets, _vault.totalSupply());
-
-        // Calculate net difference between deposited and requested
-        int256 _nettedAssets_ = int256(_deposited) - int256(_requestedAssets);
-
-        // If no netting needed, return early
-        if (_nettedAssets_ == 0) return 0;
-
-        // Convert netted assets to shares for transfer
-        uint256 _nettedShares = _dnMetaWallet.convertToShares(_nettedAssets_.abs());
-
-        // Execute the netted transfer between adapters
-        _executeNettedTransfer(
-            _nettedAssets_ > 0,
-            address(_dnMetaWallet),
-            address(_kMinterAdapter),
-            address(_dnVaultAdapter),
-            _nettedShares
-        );
-
-        return _nettedAssets_;
-    }
-
-    /// @notice Executes the netted transfer between adapters
-    /// @dev Transfers shares between kMinter and DN vault adapters based on netting direction
-    /// @param _toVaultAdapter Whether to transfer shares to the DN vault adapter (true) or to kMinter adapter (false)
-    /// @param _metawallet Address of the delta-neutral meta-wallet
-    /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _vaultAdapter Address of the DN vault adapter
-    /// @param _nettedShares Amount of shares to transfer
+    /// @notice Moves netted MetaWallet shares between the kMinter and DN vault adapters
+    /// @dev Always dispatched through the DN vault adapter:
+    ///      - `_toVaultAdapter == true`:  transferFrom kMinter adapter to vault adapter (positive netting).
+    ///      - `_toVaultAdapter == false`: transfer from vault adapter to kMinter adapter (negative netting).
     function _executeNettedTransfer(
         bool _toVaultAdapter,
         address _metawallet,
@@ -587,157 +421,64 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
     )
         internal
     {
-        Execution[] memory _executions;
-
-        if (_toVaultAdapter) {
-            // Transfer from kMinter adapter to DN vault adapter
-            _executions = ExecutionDataLibrary.getTransferFromExecutionData(
+        Execution[] memory _executions = _toVaultAdapter
+            ? ExecutionDataLibrary.getTransferFromExecutionData(
                 _metawallet, _kMinterAdapter, _vaultAdapter, _nettedShares
-            );
-            _executeAdapterCall(IMinimalSmartAccount(_vaultAdapter), _executions);
-        } else {
-            // Transfer from DN vault adapter to kMinter adapter
-            _executions = ExecutionDataLibrary.getTransferExecutionData(_metawallet, _kMinterAdapter, _nettedShares);
-            _executeAdapterCall(IMinimalSmartAccount(_vaultAdapter), _executions);
-        }
+            )
+            : ExecutionDataLibrary.getTransferExecutionData(_metawallet, _kMinterAdapter, _nettedShares);
+        _executeAdapterCall(IMinimalSmartAccount(_vaultAdapter), _executions);
     }
 
-    /// @notice Executes the rebalancing transfer between adapters
-    /// @dev Transfers shares between adapters to achieve proper balance
-    /// @param _toKMinterAdapter Whether to transfer to kMinter adapter (true) or to DN vault adapter (false)
-    /// @param _metawallet Address of the delta-neutral meta-wallet
-    /// @param _kMinterAdapter Address of the kMinter adapter
-    /// @param _vaultAdapter Address of the DN vault adapter
-    /// @param _shareValue Amount of shares to transfer
-    function _executeRebalanceTransfer(
-        bool _toKMinterAdapter,
-        IERC4626 _metawallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        IMinimalSmartAccount _vaultAdapter,
-        uint256 _shareValue
+    /// @notice Custodial netted-redeem / deposit flow, isolated to keep the parent under stack limits.
+    /// @dev Behaviour by sign of `_netted`:
+    ///      - `> 0`: redeem from MetaWallet via the kMinter adapter, then transfer the underlying to the
+    ///        custodial target (e.g. CEFFU).
+    ///      - `< 0`: deposit the underlying back into MetaWallet via the kMinter adapter.
+    ///      - `== 0`: no-op.
+    function _finaliseCustodialNetted(
+        int256 _netted,
+        address _asset,
+        address _targetMetawallet,
+        address _targetCustodial,
+        IMinimalSmartAccount _kMinterAdapter
     )
         internal
     {
-        Execution[] memory _executions;
+        if (_netted == 0) return;
 
-        if (_toKMinterAdapter) {
-            // Transfer to kMinter adapter (from DN vault adapter)
-            _executions = ExecutionDataLibrary.getTransferExecutionData(
-                address(_metawallet), address(_kMinterAdapter), _shareValue
+        address _kMinterAdapterAddr = address(_kMinterAdapter);
+
+        if (_netted > 0) {
+            uint256 _nettedAbs = uint256(_netted);
+
+            // Redeem assets from MetaWallet using the kMinter adapter
+            Execution[] memory _executions = ExecutionDataLibrary.getWithdrawExecutionData(
+                _targetMetawallet, _kMinterAdapterAddr, _kMinterAdapterAddr, _nettedAbs
             );
-            _executeAdapterCall(_vaultAdapter, _executions);
+            _executeAdapterCall(_kMinterAdapter, _executions);
+
+            require(IkToken(_asset).balanceOf(_kMinterAdapterAddr) >= _nettedAbs, KSETTLER_INSUFFICIENT_BALANCE);
+
+            // Transfer underlying to the custodial target (e.g., CEFFU)
+            _executions = ExecutionDataLibrary.getTransferExecutionData(_asset, _targetCustodial, _nettedAbs);
+            _executeAdapterCall(_kMinterAdapter, _executions);
         } else {
-            // Transfer from kMinter adapter (to DN vault adapter)
-            _executions = ExecutionDataLibrary.getTransferFromExecutionData(
-                address(_metawallet), address(_kMinterAdapter), address(_vaultAdapter), _shareValue
-            );
-            _executeAdapterCall(_vaultAdapter, _executions);
+            Execution[] memory _executions =
+                ExecutionDataLibrary.getDepositExecutionData(_targetMetawallet, _kMinterAdapterAddr, _netted.abs());
+            _executeAdapterCall(_kMinterAdapter, _executions);
         }
     }
 
-    /// @notice Calculates and processes fees for the vault
-    /// @dev Computes management and performance fees and transfers them to treasury
-    /// @param _vault Address of the vault to calculate fees for
-    /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
-    /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _fees(
-        IkStakingVault _vault,
-        IMinimalSmartAccount _dnVaultAdapter,
-        IERC4626 _dnMetaWallet
-    )
-        internal
-        returns (uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
-    {
-        // Calculate fees and get timestamps
-        uint256 _feeShares;
-        (_feeShares, _lastFeesChargedDateManagement, _lastFeesChargedDatePerformance) =
-            _calculateFees(_vault, _dnMetaWallet);
-
-        // If there are fees to charge, execute the transfer
-        if (_feeShares > 0) {
-            _executeFeeTransfer(_dnMetaWallet, _dnVaultAdapter, _feeShares);
-        }
-    }
-
-    /// @notice Calculates management and performance fees for the vault
-    /// @dev Determines if fees are due and calculates the total fee shares
-    /// @param _vault Address of the vault to calculate fees for
-    /// @param _dnMetaWallet Address of the metawallet
-    /// @return _feeShares Total number of fee shares to charge
-    /// @return _lastFeesChargedDateManagement Timestamp of last management fee charge
-    /// @return _lastFeesChargedDatePerformance Timestamp of last performance fee charge
-    function _calculateFees(
-        IkStakingVault _vault,
-        IERC4626 _dnMetaWallet
+    /// @notice First registered target of an adapter matching the requested type
+    /// @dev Reverts with KSETTLER_INVALID_TARGET_TYPE if no target of `_expectedType` is registered.
+    function _getTarget(
+        address _adapter,
+        IExecutionGuardian.TargetType _expectedType
     )
         internal
         view
-        returns (uint256 _feeShares, uint64 _lastFeesChargedDateManagement, uint64 _lastFeesChargedDatePerformance)
+        returns (address _target)
     {
-        // Get next fee timestamps from vault reader
-        uint256 _managementFeeTimestamp = _vault.nextManagementFeeTimestamp();
-        uint256 _performanceFeeTimestamp = _vault.nextPerformanceFeeTimestamp();
-
-        // Get calculated fees from vault reader
-        uint256 _totalAssets = _vault.totalAssets();
-
-        (uint256 _managementFee, uint256 _performanceFee,) =
-            _vault.computeLastBatchFeesWithAssetsAndSupply(_totalAssets, _vault.totalSupply(), block.timestamp);
-
-        uint256 feeAssets;
-        // Check if management fee is due
-        if (zeroFloorSub(block.timestamp, _managementFeeTimestamp) > 0) {
-            feeAssets += _managementFee;
-            _lastFeesChargedDateManagement = uint64(block.timestamp);
-        }
-
-        // Check if performance fee is due
-        if (zeroFloorSub(block.timestamp, _performanceFeeTimestamp) > 0) {
-            feeAssets += _performanceFee;
-            _lastFeesChargedDatePerformance = uint64(block.timestamp);
-        }
-
-        _feeShares = _dnMetaWallet.convertToShares(feeAssets);
-    }
-
-    /// @notice Executes the transfer of fee shares to the treasury
-    /// @dev Transfers calculated fee shares from the meta-wallet to the treasury
-    /// @param _dnMetaWallet Address of the delta-neutral meta-wallet
-    /// @param _dnVaultAdapter Address of the DN vault adapter
-    /// @param _feeShares Number of fee shares to transfer
-    function _executeFeeTransfer(
-        IERC4626 _dnMetaWallet,
-        IMinimalSmartAccount _dnVaultAdapter,
-        uint256 _feeShares
-    )
-        internal
-    {
-        // Get treasury address from registry
-        address _treasury = registry.getTreasury();
-
-        // Generate execution data for fee transfer
-        Execution[] memory _executions =
-            ExecutionDataLibrary.getTransferExecutionData(address(_dnMetaWallet), _treasury, _feeShares);
-
-        // Execute the transfer through the DN vault adapter
-        _executeAdapterCall(_dnVaultAdapter, _executions);
-    }
-
-    /// @dev Returns `max(0, x - y)`. Alias for `saturatingSub`.
-    function zeroFloorSub(uint256 _x, uint256 _y) internal pure returns (uint256 _z) {
-        /// @solidity memory-safe-assembly
-        assembly {
-            _z := mul(gt(_x, _y), sub(_x, _y))
-        }
-    }
-
-    /// @notice returns the target address of a given adapter matching the expected type
-    /// @param _adapter the adapter address
-    /// @param _expectedType the expected target type (0 = METAWALLET, 1 = CUSTODIAL)
-    /// @return _target the target of a given adapter matching the expected type
-    function _getTarget(address _adapter, uint8 _expectedType) internal view returns (address _target) {
         address[] memory _targets = registry.getExecutorTargets(_adapter);
         for (uint256 i = 0; i < _targets.length; i++) {
             if (registry.getTargetType(_targets[i]) == _expectedType) {
@@ -751,23 +492,85 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
                         PROFIT DISTRIBUTION FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Calculates how many assets insurance still needs to reach target
-    /// @dev Target is insuranceBps/10000 * kMinterAdapter.totalAssets()
-    /// @param _metawallet The metawallet for share/asset conversion
-    /// @param _kMinterAdapter The kMinter adapter (for totalAssets as base)
-    /// @param _asset The underlying asset address (e.g., USDC)
-    /// @return _deficitAssets Assets still needed by insurance (0 if target met)
+    /// @notice Applies depeg-driven profit/loss transfers between adapters inline
+    /// @dev Behaviour by sign of `_depeg`:
+    ///      - `> 0` (profit): insurance -> treasury -> vault adapter, falling back to treasury when no
+    ///        stakers exist so value isn't stranded on the kMinter adapter.
+    ///      - `< 0` (loss): only debited from the vault adapter when stakers exist to bear it.
+    ///      - `== 0`: no-op.
+    function _handleDepeg(
+        int256 _depeg,
+        address _asset,
+        bool _hasSupply,
+        IERC4626 _metawallet,
+        IMinimalSmartAccount _kMinterAdapter,
+        IMinimalSmartAccount _vaultAdapter
+    )
+        internal
+    {
+        if (_depeg > 0) {
+            (uint256 _sharesToVaultAdapter, uint256 _sharesToInsurance, uint256 _sharesToTreasury) =
+                _distributeProfitShares(_metawallet, _kMinterAdapter, uint256(_depeg), true, _asset);
+
+            if (_sharesToVaultAdapter > 0 && !_hasSupply) {
+                _sharesToTreasury += _sharesToVaultAdapter;
+                _sharesToVaultAdapter = 0;
+            }
+
+            if (_sharesToInsurance > 0) {
+                (, address _insurance,,) = registry.getSettlementConfig();
+                _executeAdapterCall(
+                    _kMinterAdapter,
+                    ExecutionDataLibrary.getTransferExecutionData(address(_metawallet), _insurance, _sharesToInsurance)
+                );
+            }
+            if (_sharesToTreasury > 0) {
+                (address _treasury,,,) = registry.getSettlementConfig();
+                _executeAdapterCall(
+                    _kMinterAdapter,
+                    ExecutionDataLibrary.getTransferExecutionData(address(_metawallet), _treasury, _sharesToTreasury)
+                );
+            }
+            if (_sharesToVaultAdapter > 0) {
+                _executeAdapterCall(
+                    _vaultAdapter,
+                    ExecutionDataLibrary.getTransferFromExecutionData(
+                        address(_metawallet), address(_kMinterAdapter), address(_vaultAdapter), _sharesToVaultAdapter
+                    )
+                );
+            }
+
+            if (_sharesToInsurance > 0 || _sharesToTreasury > 0 || _sharesToVaultAdapter > 0) {
+                emit ProfitDistributed(_sharesToInsurance, _sharesToTreasury, _sharesToVaultAdapter);
+            }
+        } else if (_depeg < 0 && _hasSupply) {
+            uint256 _lossAssets = uint256(-_depeg);
+            uint256 _shareValue = _metawallet.convertToShares(_lossAssets);
+            while (_metawallet.convertToAssets(_shareValue) < _lossAssets) {
+                _shareValue += 1;
+            }
+            _executeAdapterCall(
+                _vaultAdapter,
+                ExecutionDataLibrary.getTransferExecutionData(
+                    address(_metawallet), address(_kMinterAdapter), _shareValue
+                )
+            );
+        }
+    }
+
+    /// @notice Assets insurance still needs to reach `insuranceBps` of `kMinterAdapter.totalAssets()`
+    /// @return _deficitAssets Assets still needed by insurance (0 if target met or insurance unset)
     function _getInsuranceDeficit(
         IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
-        address _asset
+        address _asset,
+        address _insurance,
+        uint16 _insuranceBps
     )
         internal
         view
         returns (uint256 _deficitAssets)
     {
-        (, address _insurance,, uint16 _insuranceBps) = registry.getSettlementConfig();
-
         if (_insurance == address(0) || _insuranceBps == 0) return 0;
 
         // Target based on kMinter's total assets
@@ -783,15 +586,8 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         _deficitAssets = _insuranceTarget - _insuranceAssets;
     }
 
-    /// @notice Distributes profit shares according to priority: insurance -> treasury -> vault adapter
-    /// @dev All distributions are in metawallet shares. All remaining profit after insurance and
-    ///      treasury is sent to the vault adapter to maintain kMinter peg.
-    /// @param _metawallet The metawallet contract
-    /// @param _kMinterAdapter The kMinter adapter holding the profit shares
-    /// @param _profitAssets Total profit in assets (positive depeg value)
-    /// @param _isVaultSettlement True if this is a DN/custodial vault settlement
-    /// @param _asset The underlying asset address (e.g., USDC)
-    /// @return _sharesToVaultAdapter Shares that should be transferred to vault adapter
+    /// @notice Splits profit shares by priority: insurance deficit first, then treasury BPS, then
+    ///         vault adapter (DN/custodial only) with the remainder so the kMinter peg holds.
     function _distributeProfitShares(
         IERC4626 _metawallet,
         IMinimalSmartAccount _kMinterAdapter,
@@ -800,75 +596,44 @@ contract kSettler is IkSettler, OptimizedOwnableRoles, OptimizedReentrancyGuardT
         address _asset
     )
         internal
-        returns (uint256 _sharesToVaultAdapter)
+        view
+        returns (uint256 _sharesToVaultAdapter, uint256 _sharesToInsurance, uint256 _sharesToTreasury)
     {
-        if (_profitAssets == 0) return 0;
+        if (_profitAssets == 0) return (0, 0, 0);
 
-        // Convert profit to shares
         uint256 _profitShares = _metawallet.convertToShares(_profitAssets);
-        // Adjust for dust
         while (_metawallet.convertToAssets(_profitShares) < _profitAssets) {
             _profitShares += 1;
         }
 
         uint256 _remainingShares = _profitShares;
+        (address _treasury, address _insurance, uint16 _treasuryBps, uint16 _insuranceBps) =
+            registry.getSettlementConfig();
 
-        // Get settlement config
-        (address _treasury, address _insurance, uint16 _treasuryBps,) = registry.getSettlementConfig();
-
-        // 1. Insurance priority distribution
-        uint256 _insuranceDeficitAssets = _getInsuranceDeficit(_metawallet, _kMinterAdapter, _asset);
-        uint256 _insuranceShares = 0;
+        uint256 _insuranceDeficitAssets =
+            _getInsuranceDeficit(_metawallet, _kMinterAdapter, _asset, _insurance, _insuranceBps);
 
         if (_insuranceDeficitAssets > 0 && _insurance != address(0)) {
             uint256 _insuranceDeficitShares = _metawallet.convertToShares(_insuranceDeficitAssets);
-            // Adjust for dust (consistent with all other asset-to-share conversions)
             while (_metawallet.convertToAssets(_insuranceDeficitShares) < _insuranceDeficitAssets) {
                 _insuranceDeficitShares += 1;
             }
-            _insuranceShares = _remainingShares < _insuranceDeficitShares ? _remainingShares : _insuranceDeficitShares;
+            _sharesToInsurance = _remainingShares < _insuranceDeficitShares ? _remainingShares : _insuranceDeficitShares;
 
-            if (_insuranceShares > 0) {
-                _executeShareTransfer(_metawallet, _kMinterAdapter, _insurance, _insuranceShares);
-                _remainingShares -= _insuranceShares;
+            if (_sharesToInsurance > 0) {
+                _remainingShares -= _sharesToInsurance;
             }
         }
 
-        // 2. Treasury distribution (from remaining profit)
-        uint256 _treasuryShares = 0;
         if (_remainingShares > 0 && _treasuryBps > 0 && _treasury != address(0)) {
-            _treasuryShares = (_remainingShares * _treasuryBps) / 10_000;
-            if (_treasuryShares > 0) {
-                _executeShareTransfer(_metawallet, _kMinterAdapter, _treasury, _treasuryShares);
-                _remainingShares -= _treasuryShares;
+            _sharesToTreasury = (_remainingShares * _treasuryBps) / 10_000;
+            if (_sharesToTreasury > 0) {
+                _remainingShares -= _sharesToTreasury;
             }
         }
 
-        // 3. Remaining profit goes to vault adapter to maintain kMinter peg
-        // kMinter should never hold excess profit - it must stay pegged to kToken supply
         if (_isVaultSettlement && _remainingShares > 0) {
             _sharesToVaultAdapter = _remainingShares;
         }
-
-        emit ProfitDistributed(_insuranceShares, _treasuryShares, _sharesToVaultAdapter);
-    }
-
-    /// @notice Transfers shares from kMinter adapter to a recipient
-    /// @dev Uses ExecutionDataLibrary pattern for ERC20 transfer
-    /// @param _metawallet The metawallet (ERC20 token to transfer)
-    /// @param _kMinterAdapter The adapter executing the transfer
-    /// @param _recipient The recipient address (insurance or treasury)
-    /// @param _shares Number of shares to transfer
-    function _executeShareTransfer(
-        IERC4626 _metawallet,
-        IMinimalSmartAccount _kMinterAdapter,
-        address _recipient,
-        uint256 _shares
-    )
-        internal
-    {
-        Execution[] memory _executions =
-            ExecutionDataLibrary.getTransferExecutionData(address(_metawallet), _recipient, _shares);
-        _executeAdapterCall(_kMinterAdapter, _executions);
     }
 }
