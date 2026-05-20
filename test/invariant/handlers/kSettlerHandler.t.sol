@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { BaseHandler } from "kam/test/invariant/handlers/BaseHandler.t.sol";
 import { AddressSet, LibAddressSet } from "kam/test/invariant/helpers/AddressSet.sol";

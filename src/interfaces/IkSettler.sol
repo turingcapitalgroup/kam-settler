@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { IkToken } from "kToken0/interfaces/IkToken.sol";
 import { IVaultAdapter } from "kam/src/interfaces/IVaultAdapter.sol";

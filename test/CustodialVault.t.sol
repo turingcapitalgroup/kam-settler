@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.30;
+pragma solidity 0.8.34;
 
 import { console2 as console } from "forge-std/console2.sol";
 import { ERC20ExecutionValidator } from "kam/src/adapters/parameters/ERC20ExecutionValidator.sol";
